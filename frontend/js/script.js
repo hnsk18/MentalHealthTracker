@@ -18,8 +18,22 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             currentUser = JSON.parse(savedUser);
             showNavbar();
-            navigateTo('dashboard');
-            loadUserDashboard();
+            
+            // Restore user based on role
+            if (currentUser.role === 'volunteer') {
+                navigateTo('volunteer-dashboard');
+                initializeVolunteerDashboard(currentUser);
+                navigateVolunteerTab('home');
+                updateNavigationByRole('volunteer');
+            } else if (currentUser.role === 'admin') {
+                navigateTo('admin-dashboard');
+                loadAdminDashboard();
+                updateNavigationByRole('admin');
+            } else {
+                navigateTo('dashboard');
+                loadUserDashboard();
+                updateNavigationByRole('user');
+            }
         } catch (error) {
             console.error('Error loading saved user:', error);
             navigateTo('home');
@@ -127,12 +141,16 @@ async function handleLogin(e) {
             if (role === 'admin') {
                 navigateTo('admin-dashboard');
                 loadAdminDashboard();
+                updateNavigationByRole('admin');
             } else if (role === 'volunteer') {
                 navigateTo('volunteer-dashboard');
-                loadVolunteerDashboard();
+                initializeVolunteerDashboard(data);
+                navigateVolunteerTab('home');
+                updateNavigationByRole('volunteer');
             } else {
                 navigateTo('dashboard');
                 loadUserDashboard();
+                updateNavigationByRole('user');
             }
             
             showToast('Login successful!', 'success');
