@@ -133,7 +133,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await response.json();
             
             // Store data temporarily to share and redirect nicely
-            sessionStorage.setItem('mindmate_result', JSON.stringify(data));
+            sessionStorage.setItem('sevak_result', JSON.stringify(data));
             window.location.href = 'result.html';
 
         } catch (error) {

@@ -1,6 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
 
-    const storedResult = sessionStorage.getItem('mindmate_result');
+    const storedResult = sessionStorage.getItem('sevak_result');
     if (!storedResult) {
         alert("No recent quiz result found. Redirecting to home.");
         window.location.href = 'index.html';

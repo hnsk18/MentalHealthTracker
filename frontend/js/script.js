@@ -1,4 +1,4 @@
-/* MindMitra Frontend - Main Script */
+/* Sevak Frontend - Main Script */
 
 const API_BASE = '/api';
 let currentUser = null;
@@ -18,7 +18,7 @@ let lastUserSecureChatHash = '';
 let lastVolunteerSecureChatHash = '';
 let quizResultData = null;
 let currentChatMode = 'ai';
-const QUIZ_RESULT_STORAGE_KEY = 'mindmitra_quiz_result';
+const QUIZ_RESULT_STORAGE_KEY = 'sevak_quiz_result';
 
 function normalizeQuizResultPayload(payload) {
     if (!payload || typeof payload !== 'object') return null;
@@ -58,8 +58,46 @@ function clearStoredQuizResultContext() {
 window.receiveQuizResultAndNavigate = function (payload) {
     const ok = setQuizResultContext(payload, true);
     if (!ok) return;
+
+    // Auto-push mood from quiz result to mood tracker
+    if (currentUser && payload.feedback && payload.feedback.mood) {
+        pushQuizMoodToTracker(payload.feedback.mood, payload.score);
+    }
+
     navigateTo('messaging');
 };
+
+function mapQuizMoodToAppMood(quizMood, score) {
+    const lower = (quizMood || '').toLowerCase();
+    if (/happy|positive|joyful|cheerful|good|great|content/i.test(lower)) return 'happy';
+    if (/sad|depress|unhappy|low|down|grief|lonely/i.test(lower)) return 'sad';
+    if (/stress|overwhelm|pressure|burnout|tense|exhaust|angry|frustrat/i.test(lower)) return 'stressed';
+    if (/anxi|nervous|worried|fear|panic|uneasy|restless/i.test(lower)) return 'anxious';
+    if (/calm|peace|relax|serene|balanced|steady|neutral|mindful/i.test(lower)) return 'calm';
+    // Fallback based on score
+    if (score >= 75) return 'happy';
+    if (score >= 55) return 'calm';
+    if (score >= 40) return 'stressed';
+    if (score >= 25) return 'anxious';
+    return 'sad';
+}
+
+async function pushQuizMoodToTracker(quizMood, score) {
+    try {
+        const mood = mapQuizMoodToAppMood(quizMood, score);
+        const response = await fetch(`${API_BASE}/mood`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.user_id, mood })
+        });
+        if (response.ok) {
+            console.log('Quiz mood pushed to tracker:', mood, '(from quiz mood:', quizMood, ')');
+            showToast(`Mood "${mood}" saved from your quiz results 📊`, 'success');
+        }
+    } catch (e) {
+        console.warn('Failed to push quiz mood to tracker:', e);
+    }
+}
 
 // ==================== Initialization ====================
 

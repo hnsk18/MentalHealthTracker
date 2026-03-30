@@ -1,7 +1,7 @@
 {
-  "name": "mindmitra",
+  "name": "sevak",
   "version": "1.0.0",
-  "description": "MindMitra — Mental Wellness Platform with Nyxie AI",
+  "description": "Sevak — Mental Wellness Platform with Nyxie AI",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

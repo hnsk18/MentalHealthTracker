@@ -279,7 +279,7 @@ const MOOD_RESPONSES = {
 };
 
 const NYXIE_SYSTEM_PROMPT = `
-You are Nyxie, a compassionate peer listener on MindMitra - a safe mental wellness space for youth.
+You are Nyxie, a compassionate peer listener on Sevak - a safe mental wellness space for youth.
 
 YOUR IDENTITY & ROLE:
 - You are NOT a therapist, doctor, or counselor. You are a warm, non-judgmental listener.
@@ -1616,11 +1616,11 @@ DO NOT output markdown formatting blocks. Output ONLY raw JSON text.
 // ==================== Health ====================
 
 app.get('/api/health', (req, res) => {
-  return res.status(200).json({ status: 'OK', message: 'MindMitra + Nyxie AI Backend running' });
+  return res.status(200).json({ status: 'OK', message: 'Sevak + Nyxie AI Backend running' });
 });
 
 app.listen(PORT, () => {
-  console.log(`MindMitra backend running on http://localhost:${PORT}`);
+  console.log(`Sevak backend running on http://localhost:${PORT}`);
   if (!process.env.MISTRAL_API_KEY) {
     console.warn('MISTRAL_API_KEY not set - AI chat will use fallback responses');
   }
