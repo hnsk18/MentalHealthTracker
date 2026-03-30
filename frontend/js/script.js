@@ -1,6 +1,6 @@
 /* MindMitra Frontend - Main Script */
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = '/api';
 let currentUser = null;
 let selectedRole = 'user';
 let moodChart = null;
@@ -78,7 +78,7 @@ function navigateTo(page) {
             if (page === 'dashboard') {
                 loadUserDashboard();
             } else if (page === 'quiz') {
-                loadQuiz();
+                // Quiz is embedded via iframe, no redirect needed
             } else if (page === 'mood-tracker') {
                 loadMoodHistory();
             } else if (page === 'profile') {

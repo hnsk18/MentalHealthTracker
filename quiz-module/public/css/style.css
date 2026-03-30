@@ -1,0 +1,109 @@
+/* BASE STYLES & THEMING */
+body.dark-theme {
+    background: radial-gradient(circle at 50% 10%, #1c1c28 0%, #0d0d14 100%);
+    color: #e2e8f0;
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+}
+
+.text-gradient {
+    background: linear-gradient(90deg, #63b3ed, #a0aec0);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* CARDS & CONTAINERS */
+.glass-card {
+    background: rgba(30, 30, 40, 0.6);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    border-radius: 1.5rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    transition: transform 0.3s ease;
+}
+
+/* OPTION BUTTONS */
+.option-label {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.75rem;
+    padding: 1rem 1.5rem;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    color: #cbd5e1;
+}
+
+.option-label:hover {
+    background: rgba(99, 179, 237, 0.1);
+    border-color: #63b3ed;
+    color: #fff;
+    transform: translateY(-2px);
+}
+
+.option-radio {
+    display: none;
+}
+
+.option-radio:checked + .option-label {
+    background: rgba(99, 179, 237, 0.2);
+    border-color: #63b3ed;
+    color: #fff;
+    box-shadow: 0 0 15px rgba(99, 179, 237, 0.3);
+}
+
+/* BUTTONS */
+.action-btn {
+    transition: all 0.3s ease;
+}
+
+.action-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.3);
+}
+
+.action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ANIMATIONS */
+.text-fade-in {
+    animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* SCORE CIRCLE PROGRESS SVG */
+.circular-progress circle {
+    fill: none;
+    stroke-width: 10;
+    transform: rotate(-90deg);
+    transform-origin: 50% 50%;
+}
+
+.circular-progress circle.bg {
+    stroke: rgba(255,255,255, 0.1);
+}
+
+.circular-progress circle.fg {
+    stroke: url(#gradient); 
+    stroke: #63b3ed;
+    stroke-dasharray: 314; /* 2 * PI * 50 */
+    stroke-dashoffset: 314; /* hide completely initially */
+    transition: stroke-dashoffset 1.5s ease-out;
+}
+
+/* Result specific styling */
+.suggestion-card-bg {
+    background: linear-gradient(135deg, rgba(30,30,40,0.8) 0%, rgba(45,55,72,0.8) 100%);
+}
+.suggestion-card-bg .card-body p {
+    background: rgba(0,0,0,0.2);
+    padding: 1rem;
+    border-radius: 0.5rem;
+    border-left: 4px solid #0dcaf0;
+}

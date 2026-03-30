@@ -1,0 +1,27 @@
+{
+  "name": "mentalhealthtracker",
+  "version": "1.0.0",
+  "description": "A full-stack mental health web application designed to help users track their mood, assess stress levels, and receive personalized recommendations.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hnsk18/MentalHealthTracker.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/hnsk18/MentalHealthTracker/issues"
+  },
+  "homepage": "https://github.com/hnsk18/MentalHealthTracker#readme",
+  "dependencies": {
+    "axios": "^1.14.0",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1"
+  }
+}

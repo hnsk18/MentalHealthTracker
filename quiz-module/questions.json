@@ -1,0 +1,1102 @@
+[
+    {
+        "id": 1,
+        "question": "How often do you feel overwhelmed by your daily tasks?",
+        "options": [
+            {
+                "description": "Rarely or never",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Almost constantly",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 2,
+        "question": "When faced with an unexpected problem, how do you react?",
+        "options": [
+            {
+                "description": "Stay calm and find solutions",
+                "score": 4
+            },
+            {
+                "description": "Feel stressed but manage",
+                "score": 3
+            },
+            {
+                "description": "Feel anxious for a while",
+                "score": 2
+            },
+            {
+                "description": "Panic or freeze",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 3,
+        "question": "How well do you sleep at night?",
+        "options": [
+            {
+                "description": "Very well",
+                "score": 4
+            },
+            {
+                "description": "Mostly okay",
+                "score": 3
+            },
+            {
+                "description": "Often disturbed",
+                "score": 2
+            },
+            {
+                "description": "Very poor sleep",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 4,
+        "question": "How often do you feel motivated to do your work?",
+        "options": [
+            {
+                "description": "Always motivated",
+                "score": 4
+            },
+            {
+                "description": "Mostly motivated",
+                "score": 3
+            },
+            {
+                "description": "Sometimes lack motivation",
+                "score": 2
+            },
+            {
+                "description": "Rarely motivated",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 5,
+        "question": "How do you feel about yourself lately?",
+        "options": [
+            {
+                "description": "Very positive",
+                "score": 4
+            },
+            {
+                "description": "Neutral",
+                "score": 3
+            },
+            {
+                "description": "Slightly negative",
+                "score": 2
+            },
+            {
+                "description": "Very negative",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 6,
+        "question": "How often do you feel anxious without a clear reason?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Very frequently",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 7,
+        "question": "How well do you handle criticism?",
+        "options": [
+            {
+                "description": "Accept and improve",
+                "score": 4
+            },
+            {
+                "description": "Take time but accept",
+                "score": 3
+            },
+            {
+                "description": "Feel upset",
+                "score": 2
+            },
+            {
+                "description": "Take it personally and feel bad",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 8,
+        "question": "How often do you feel lonely?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Always",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 9,
+        "question": "How confident do you feel in social situations?",
+        "options": [
+            {
+                "description": "Very confident",
+                "score": 4
+            },
+            {
+                "description": "Somewhat confident",
+                "score": 3
+            },
+            {
+                "description": "Uncomfortable",
+                "score": 2
+            },
+            {
+                "description": "Very anxious",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 10,
+        "question": "How often do you feel stressed about the future?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Constantly",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 11,
+        "question": "How often do you take breaks to relax?",
+        "options": [
+            {
+                "description": "Regularly",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 12,
+        "question": "How easily do you get irritated?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Very easily",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 13,
+        "question": "How often do you feel happy during the day?",
+        "options": [
+            {
+                "description": "Most of the time",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Almost never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 14,
+        "question": "How well can you control your emotions?",
+        "options": [
+            {
+                "description": "Very well",
+                "score": 4
+            },
+            {
+                "description": "Mostly",
+                "score": 3
+            },
+            {
+                "description": "Sometimes struggle",
+                "score": 2
+            },
+            {
+                "description": "Hardly",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 15,
+        "question": "How often do you feel tired without reason?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Very often",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 16,
+        "question": "How do you react when things don’t go your way?",
+        "options": [
+            {
+                "description": "Adapt quickly",
+                "score": 4
+            },
+            {
+                "description": "Take time to adjust",
+                "score": 3
+            },
+            {
+                "description": "Feel frustrated",
+                "score": 2
+            },
+            {
+                "description": "Feel helpless",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 17,
+        "question": "How often do you feel appreciated?",
+        "options": [
+            {
+                "description": "Often",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 18,
+        "question": "How comfortable are you expressing your feelings?",
+        "options": [
+            {
+                "description": "Very comfortable",
+                "score": 4
+            },
+            {
+                "description": "Somewhat comfortable",
+                "score": 3
+            },
+            {
+                "description": "Uncomfortable",
+                "score": 2
+            },
+            {
+                "description": "Avoid completely",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 19,
+        "question": "How often do you overthink situations?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Always",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 20,
+        "question": "How hopeful do you feel about your goals?",
+        "options": [
+            {
+                "description": "Very hopeful",
+                "score": 4
+            },
+            {
+                "description": "Somewhat hopeful",
+                "score": 3
+            },
+            {
+                "description": "Uncertain",
+                "score": 2
+            },
+            {
+                "description": "Hopeless",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 21,
+        "question": "How often do you feel calm?",
+        "options": [
+            {
+                "description": "Most of the time",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Almost never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 22,
+        "question": "How often do you compare yourself to others?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Constantly",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 23,
+        "question": "How do you deal with failure?",
+        "options": [
+            {
+                "description": "Learn and move on",
+                "score": 4
+            },
+            {
+                "description": "Feel bad but recover",
+                "score": 3
+            },
+            {
+                "description": "Feel discouraged",
+                "score": 2
+            },
+            {
+                "description": "Feel like giving up",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 24,
+        "question": "How often do you feel distracted?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Always",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 25,
+        "question": "How often do you feel proud of yourself?",
+        "options": [
+            {
+                "description": "Often",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 26,
+        "question": "How often do you feel emotionally drained?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Very often",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 27,
+        "question": "How do you react under pressure?",
+        "options": [
+            {
+                "description": "Stay focused",
+                "score": 4
+            },
+            {
+                "description": "Manage okay",
+                "score": 3
+            },
+            {
+                "description": "Struggle",
+                "score": 2
+            },
+            {
+                "description": "Break down",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 28,
+        "question": "How often do you feel in control of your life?",
+        "options": [
+            {
+                "description": "Mostly in control",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Not at all",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 29,
+        "question": "How often do you feel mentally exhausted?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Always",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 30,
+        "question": "How often do you feel optimistic?",
+        "options": [
+            {
+                "description": "Very often",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 31,
+        "question": "How often do you worry about things beyond your control?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Always",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 32,
+        "question": "How often do you feel relaxed?",
+        "options": [
+            {
+                "description": "Most of the time",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 33,
+        "question": "How often do you enjoy your daily activities?",
+        "options": [
+            {
+                "description": "Very often",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 34,
+        "question": "How often do you feel stressed in social situations?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Always",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 35,
+        "question": "How often do you feel satisfied with your progress?",
+        "options": [
+            {
+                "description": "Often",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 36,
+        "question": "How often do you feel confident about your decisions?",
+        "options": [
+            {
+                "description": "Very confident",
+                "score": 4
+            },
+            {
+                "description": "Somewhat confident",
+                "score": 3
+            },
+            {
+                "description": "Uncertain",
+                "score": 2
+            },
+            {
+                "description": "Very doubtful",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 37,
+        "question": "How often do you feel mentally clear?",
+        "options": [
+            {
+                "description": "Very often",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 38,
+        "question": "How often do you feel pressured by expectations?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Always",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 39,
+        "question": "How often do you feel emotionally stable?",
+        "options": [
+            {
+                "description": "Very stable",
+                "score": 4
+            },
+            {
+                "description": "Mostly stable",
+                "score": 3
+            },
+            {
+                "description": "Unstable sometimes",
+                "score": 2
+            },
+            {
+                "description": "Very unstable",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 40,
+        "question": "How often do you feel motivated to improve yourself?",
+        "options": [
+            {
+                "description": "Very often",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 41,
+        "question": "How often do you feel supported by others?",
+        "options": [
+            {
+                "description": "Very often",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 42,
+        "question": "How often do you feel overwhelmed by emotions?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Always",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 43,
+        "question": "How often do you feel in control of your emotions?",
+        "options": [
+            {
+                "description": "Very often",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 44,
+        "question": "How often do you feel stressed about responsibilities?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Always",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 45,
+        "question": "How often do you feel satisfied with your life?",
+        "options": [
+            {
+                "description": "Very often",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 46,
+        "question": "How often do you feel anxious in daily situations?",
+        "options": [
+            {
+                "description": "Rarely",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Often",
+                "score": 2
+            },
+            {
+                "description": "Always",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 47,
+        "question": "How often do you feel energetic?",
+        "options": [
+            {
+                "description": "Very often",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 48,
+        "question": "How often do you feel calm under stress?",
+        "options": [
+            {
+                "description": "Very often",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 49,
+        "question": "How often do you feel mentally strong?",
+        "options": [
+            {
+                "description": "Very often",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    },
+    {
+        "id": 50,
+        "question": "How often do you feel balanced emotionally?",
+        "options": [
+            {
+                "description": "Very often",
+                "score": 4
+            },
+            {
+                "description": "Sometimes",
+                "score": 3
+            },
+            {
+                "description": "Rarely",
+                "score": 2
+            },
+            {
+                "description": "Never",
+                "score": 1
+            }
+        ]
+    }
+]
