@@ -2316,6 +2316,21 @@ navigateTo = function(page) {
 
 // ==================== Utilities ====================
 
+async function testApiConnection() {
+    try {
+        const response = await fetch('/api/test');
+        const text = await response.text();
+
+        if (response.ok) {
+            showToast(`API Connected: ${text}`, 'success');
+        } else {
+            showToast(`API Error (${response.status})`, 'error');
+        }
+    } catch (error) {
+        showToast('API unreachable. Check backend deployment.', 'error');
+    }
+}
+
 function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = 'toast';
