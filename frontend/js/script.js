@@ -472,16 +472,100 @@ async function selectMoodAndSave(mood) {
         const data = await response.json();
 
         if (response.ok) {
+            // Show success toast
             document.getElementById('moodMessage').classList.remove('hidden');
             setTimeout(() => {
                 document.getElementById('moodMessage').classList.add('hidden');
             }, 3000);
+
+            // Render dynamic response box
+            if (data.response) {
+                renderMoodResponse(data.response, data.mood_entry);
+            }
+
+            // Track mood in localStorage for low-mood detection
+            trackMoodLocally(mood);
 
             loadMoodHistory();
         }
     } catch (error) {
         console.error('Error saving mood:', error);
         showToast('Error saving mood', 'error');
+    }
+}
+
+function renderMoodResponse(moodResponse, moodEntry) {
+    const responseBox = document.getElementById('responseBox');
+
+    // Build gradient based on mood color
+    const gradients = {
+        happy:    'from-yellow-50 to-amber-50 border-yellow-300',
+        sad:      'from-blue-50 to-indigo-50 border-blue-300',
+        stressed: 'from-red-50 to-rose-50 border-red-300',
+        anxious:  'from-orange-50 to-amber-50 border-orange-300',
+        calm:     'from-green-50 to-emerald-50 border-green-300'
+    };
+    const gradientClass = gradients[moodEntry.mood] || 'from-gray-50 to-slate-50 border-gray-300';
+
+    let buttonsHtml = moodResponse.actions.map(action => `
+        <button onclick="navigateTo('${action.route}')"
+            class="bg-white hover:bg-indigo-50 text-gray-800 font-semibold px-5 py-3 rounded-xl transition-all duration-200 transform hover:scale-105 hover:shadow-md border-2 border-gray-200 hover:border-indigo-400 text-sm flex items-center gap-2">
+            ${action.label}
+        </button>
+    `).join('');
+
+    responseBox.innerHTML = `
+        <div class="bg-gradient-to-br ${gradientClass} border-2 rounded-2xl shadow-lg p-8 animate-fade-in">
+            <div class="flex items-center gap-4 mb-5">
+                <span class="text-5xl">${moodEntry.emoji}</span>
+                <div>
+                    <p class="text-xl font-bold text-gray-800">${moodResponse.message}</p>
+                    <p class="text-sm text-gray-500 mt-1">Here are some things you can do right now:</p>
+                </div>
+            </div>
+            <div class="flex flex-wrap gap-3">
+                ${buttonsHtml}
+            </div>
+        </div>
+    `;
+
+    // Animate in
+    responseBox.classList.remove('hidden');
+    responseBox.style.opacity = '0';
+    responseBox.style.transform = 'translateY(16px)';
+    requestAnimationFrame(() => {
+        responseBox.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+        responseBox.style.opacity = '1';
+        responseBox.style.transform = 'translateY(0)';
+    });
+}
+
+function trackMoodLocally(mood) {
+    try {
+        let recentMoods = JSON.parse(localStorage.getItem('recentMoods') || '[]');
+        recentMoods.push(mood);
+        // Keep only last 3
+        if (recentMoods.length > 3) {
+            recentMoods = recentMoods.slice(-3);
+        }
+        localStorage.setItem('recentMoods', JSON.stringify(recentMoods));
+
+        // Check if last 3 are all sad or anxious
+        if (recentMoods.length >= 3) {
+            const lowMoods = ['sad', 'anxious', 'stressed'];
+            const allLow = recentMoods.every(m => lowMoods.includes(m));
+            if (allLow) {
+                const alertEl = document.getElementById('lowMoodAlert');
+                if (alertEl) {
+                    alertEl.classList.remove('hidden');
+                    alertEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                // Reset tracking after showing alert
+                localStorage.setItem('recentMoods', '[]');
+            }
+        }
+    } catch (e) {
+        console.error('Error tracking mood locally:', e);
     }
 }
 
@@ -730,6 +814,239 @@ function loadRoleDistributionChart(roleDistribution) {
     });
 }
 
+// ==================== Breathing Exercise ====================
+
+let breathingInterval = null;
+let breathingTimeout = null;
+let breathingRound = 1;
+let currentTechnique = 'relaxed';
+
+const BREATHING_TECHNIQUES = {
+    relaxed: { name: 'Box Breathing', phases: [
+        { label: 'Breathe In', duration: 4, action: 'expand' },
+        { label: 'Hold', duration: 4, action: 'hold' },
+        { label: 'Breathe Out', duration: 4, action: 'shrink' },
+        { label: 'Hold', duration: 4, action: 'hold' }
+    ]},
+    calming: { name: '4-7-8 Technique', phases: [
+        { label: 'Breathe In', duration: 4, action: 'expand' },
+        { label: 'Hold', duration: 7, action: 'hold' },
+        { label: 'Breathe Out', duration: 8, action: 'shrink' }
+    ]},
+    energizing: { name: 'Quick Breath', phases: [
+        { label: 'Breathe In', duration: 2, action: 'expand' },
+        { label: 'Breathe Out', duration: 2, action: 'shrink' }
+    ]}
+};
+
+function selectBreathingTechnique(technique) {
+    currentTechnique = technique;
+    // Update UI - highlight selected
+    document.querySelectorAll('.breath-technique-btn').forEach(btn => {
+        btn.classList.remove('border-indigo-500', 'border-emerald-500', 'border-orange-500', 'bg-indigo-50', 'bg-emerald-50', 'bg-orange-50');
+        btn.classList.add('border-transparent');
+    });
+    const colors = { relaxed: 'indigo', calming: 'emerald', energizing: 'orange' };
+    const color = colors[technique];
+    const selectedBtn = document.querySelector(`.breath-technique-btn[data-technique="${technique}"]`);
+    if (selectedBtn) {
+        selectedBtn.classList.remove('border-transparent');
+        selectedBtn.classList.add(`border-${color}-500`, `bg-${color}-50`);
+    }
+    // Stop current if running
+    stopBreathing();
+    showToast(`Selected: ${BREATHING_TECHNIQUES[technique].name}`, 'success');
+}
+
+function startBreathing() {
+    const technique = BREATHING_TECHNIQUES[currentTechnique];
+    const circle = document.getElementById('breathCircle');
+    const text = document.getElementById('breathText');
+    const timer = document.getElementById('breathTimer');
+    const roundEl = document.getElementById('breathRound');
+    const startBtn = document.getElementById('breathStartBtn');
+    const stopBtn = document.getElementById('breathStopBtn');
+
+    if (!circle || !text || !timer) return;
+
+    startBtn.classList.add('hidden');
+    stopBtn.classList.remove('hidden');
+    breathingRound = 1;
+    roundEl.textContent = breathingRound;
+
+    function runPhase(phaseIndex) {
+        if (!breathingInterval && phaseIndex !== 0) return; // stopped
+
+        const phase = technique.phases[phaseIndex % technique.phases.length];
+        let seconds = phase.duration;
+
+        text.textContent = phase.label;
+        timer.textContent = seconds;
+
+        // Set circle animation
+        circle.classList.remove('breathing-expand', 'breathing-shrink', 'breathing-hold');
+        if (phase.action === 'expand') {
+            circle.classList.add('breathing-expand');
+            circle.style.animationDuration = phase.duration + 's';
+        } else if (phase.action === 'shrink') {
+            circle.classList.add('breathing-shrink');
+            circle.style.animationDuration = phase.duration + 's';
+        } else {
+            circle.classList.add('breathing-hold');
+        }
+
+        // Countdown
+        breathingInterval = setInterval(() => {
+            seconds--;
+            if (seconds <= 0) {
+                clearInterval(breathingInterval);
+                breathingInterval = true; // mark as running to differentiate from stopped (null)
+
+                const nextPhase = phaseIndex + 1;
+                // Check if we completed a full cycle
+                if (nextPhase % technique.phases.length === 0) {
+                    breathingRound++;
+                    roundEl.textContent = breathingRound;
+                    if (breathingRound > 5) {
+                        // Done after 5 rounds
+                        stopBreathing();
+                        showToast('Great job! You completed the exercise 🎉', 'success');
+                        return;
+                    }
+                }
+                runPhase(nextPhase);
+            } else {
+                timer.textContent = seconds;
+            }
+        }, 1000);
+    }
+
+    breathingInterval = true; // mark as running
+    runPhase(0);
+}
+
+function stopBreathing() {
+    if (breathingInterval && breathingInterval !== true) {
+        clearInterval(breathingInterval);
+    }
+    breathingInterval = null;
+    breathingRound = 1;
+
+    const circle = document.getElementById('breathCircle');
+    const text = document.getElementById('breathText');
+    const timer = document.getElementById('breathTimer');
+    const roundEl = document.getElementById('breathRound');
+    const startBtn = document.getElementById('breathStartBtn');
+    const stopBtn = document.getElementById('breathStopBtn');
+
+    if (circle) {
+        circle.classList.remove('breathing-expand', 'breathing-shrink', 'breathing-hold');
+        circle.style.animationDuration = '';
+    }
+    if (text) text.textContent = 'Breathe In';
+    if (timer) timer.textContent = '4';
+    if (roundEl) roundEl.textContent = '1';
+    if (startBtn) startBtn.classList.remove('hidden');
+    if (stopBtn) stopBtn.classList.add('hidden');
+}
+
+// ==================== Journal ====================
+
+let journalEntries = [];
+
+function initJournal() {
+    try {
+        journalEntries = JSON.parse(localStorage.getItem('journalEntries') || '[]');
+    } catch (e) {
+        journalEntries = [];
+    }
+
+    // Character counter
+    const textarea = document.getElementById('journalEntry');
+    if (textarea) {
+        textarea.addEventListener('input', function() {
+            const count = document.getElementById('journalCharCount');
+            if (count) count.textContent = `${this.value.length} characters`;
+        });
+    }
+
+    renderJournalHistory();
+}
+
+function saveJournalEntry() {
+    const textarea = document.getElementById('journalEntry');
+    if (!textarea) return;
+
+    const text = textarea.value.trim();
+    if (!text) {
+        showToast('Please write something first', 'error');
+        return;
+    }
+
+    const entry = {
+        id: Date.now(),
+        text: text,
+        timestamp: new Date().toISOString(),
+        user: currentUser ? currentUser.name : 'Anonymous'
+    };
+
+    journalEntries.push(entry);
+    localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
+
+    textarea.value = '';
+    const count = document.getElementById('journalCharCount');
+    if (count) count.textContent = '0 characters';
+
+    renderJournalHistory();
+    showToast('Journal entry saved! 📝', 'success');
+}
+
+function renderJournalHistory() {
+    const container = document.getElementById('journalHistory');
+    if (!container) return;
+
+    if (journalEntries.length === 0) {
+        container.innerHTML = '<p class="text-gray-500">No journal entries yet. Start writing!</p>';
+        return;
+    }
+
+    let html = '';
+    // Show newest first
+    [...journalEntries].reverse().forEach(entry => {
+        const time = new Date(entry.timestamp).toLocaleString();
+        const preview = entry.text.length > 200 ? entry.text.substring(0, 200) + '...' : entry.text;
+        html += `
+            <div class="p-5 bg-gradient-to-br from-gray-50 to-slate-50 rounded-xl border border-gray-200 hover:shadow-md transition-all duration-200">
+                <div class="flex justify-between items-start mb-2">
+                    <p class="text-xs text-gray-400 font-medium">${time}</p>
+                    <button onclick="deleteJournalEntry(${entry.id})" class="text-red-400 hover:text-red-600 text-xs transition">🗑️ Delete</button>
+                </div>
+                <p class="text-gray-700 leading-relaxed whitespace-pre-wrap">${escapeHtml(preview)}</p>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+
+function deleteJournalEntry(id) {
+    journalEntries = journalEntries.filter(e => e.id !== id);
+    localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
+    renderJournalHistory();
+    showToast('Entry deleted', 'success');
+}
+
+// Initialize journal when navigating to journal page
+const originalNavigateTo = navigateTo;
+navigateTo = function(page) {
+    originalNavigateTo(page);
+    if (page === 'journal') {
+        initJournal();
+    } else if (page === 'breathing') {
+        stopBreathing(); // Reset breathing state when navigating here
+    }
+};
+
 // ==================== Utilities ====================
 
 function showToast(message, type = 'info') {
@@ -755,3 +1072,4 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+

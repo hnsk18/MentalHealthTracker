@@ -155,6 +155,46 @@ app.get('/api/user/:user_id', (req, res) => {
 
 // ==================== Mood Routes ====================
 
+// Mood-specific response data
+const MOOD_RESPONSES = {
+    happy: {
+        message: "Great to see you feeling good! Keep it up 💙",
+        actions: [
+            { label: "📓 Write Journal", route: "journal" },
+            { label: "📊 View Dashboard", route: "dashboard" }
+        ]
+    },
+    sad: {
+        message: "It's okay to feel this way. You're not alone 💙",
+        actions: [
+            { label: "🤖 Talk to AI", route: "messaging" },
+            { label: "🤝 Connect to Volunteer", route: "volunteer-dashboard" },
+            { label: "📓 Write Journal", route: "journal" }
+        ]
+    },
+    stressed: {
+        message: "Let's slow down together. Take a deep breath 🫁",
+        actions: [
+            { label: "🧘 Start Breathing Exercise", route: "breathing" },
+            { label: "🤖 Talk to AI", route: "messaging" }
+        ]
+    },
+    anxious: {
+        message: "You're safe. Let's take this one step at a time 💙",
+        actions: [
+            { label: "🤖 Talk to AI", route: "messaging" },
+            { label: "🧘 Calm Exercise", route: "breathing" }
+        ]
+    },
+    calm: {
+        message: "You're in a good place. Keep maintaining your balance 🌿",
+        actions: [
+            { label: "📓 Write Journal", route: "journal" },
+            { label: "📊 View Progress", route: "dashboard" }
+        ]
+    }
+};
+
 app.post('/api/mood', (req, res) => {
     const { user_id, mood } = req.body;
 
@@ -172,9 +212,15 @@ app.post('/api/mood', (req, res) => {
     if (!moods_db[user_id]) moods_db[user_id] = [];
     moods_db[user_id].push(mood_entry);
 
+    const moodResponse = MOOD_RESPONSES[mood] || {
+        message: "Thank you for sharing how you feel 💙",
+        actions: [{ label: "📊 View Dashboard", route: "dashboard" }]
+    };
+
     res.status(201).json({
         success: true,
-        mood_entry
+        mood_entry,
+        response: moodResponse
     });
 });
 

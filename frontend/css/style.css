@@ -390,3 +390,68 @@ textarea {
     padding: 0.75rem 1rem;
     transition: all 0.3s ease;
 }
+
+/* ==================== Breathing Exercise ==================== */
+
+.breathing-circle {
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 40px rgba(102, 126, 234, 0.3);
+    transition: box-shadow 0.3s ease;
+}
+
+.breathing-circle.breathing-expand {
+    animation: breathExpand forwards ease-in-out;
+}
+
+.breathing-circle.breathing-shrink {
+    animation: breathShrink forwards ease-in-out;
+}
+
+.breathing-circle.breathing-hold {
+    animation: none;
+}
+
+@keyframes breathExpand {
+    from {
+        transform: scale(1);
+        box-shadow: 0 0 40px rgba(102, 126, 234, 0.3);
+    }
+    to {
+        transform: scale(1.6);
+        box-shadow: 0 0 80px rgba(102, 126, 234, 0.5), 0 0 120px rgba(118, 75, 162, 0.2);
+    }
+}
+
+@keyframes breathShrink {
+    from {
+        transform: scale(1.6);
+        box-shadow: 0 0 80px rgba(102, 126, 234, 0.5), 0 0 120px rgba(118, 75, 162, 0.2);
+    }
+    to {
+        transform: scale(1);
+        box-shadow: 0 0 40px rgba(102, 126, 234, 0.3);
+    }
+}
+
+/* Fade-in animation for mood response */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fadeInUp 0.5s ease forwards;
+}
+
