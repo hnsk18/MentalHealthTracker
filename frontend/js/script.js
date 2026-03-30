@@ -55,7 +55,7 @@ function clearStoredQuizResultContext() {
 }
 
 // Used by quiz result iframe for deterministic handoff before navigating to messaging.
-window.receiveQuizResultAndNavigate = function(payload) {
+window.receiveQuizResultAndNavigate = function (payload) {
     const ok = setQuizResultContext(payload, true);
     if (!ok) return;
     navigateTo('messaging');
@@ -64,7 +64,7 @@ window.receiveQuizResultAndNavigate = function(payload) {
 // ==================== Initialization ====================
 
 // Listen for messages from quiz iframe
-window.addEventListener('message', function(event) {
+window.addEventListener('message', function (event) {
     if (event.data && event.data.type === 'QUIZ_RESULT') {
         setQuizResultContext(event.data.data, true);
         console.log('Quiz data received:', quizResultData);
@@ -72,7 +72,7 @@ window.addEventListener('message', function(event) {
 });
 
 // Handle browser back/forward buttons to preserve page navigation
-window.addEventListener('popstate', function(event) {
+window.addEventListener('popstate', function (event) {
     const pageFromHash = getPageFromHash();
     if (pageFromHash && currentUser && canAccessPage(pageFromHash)) {
         navigateTo(pageFromHash);
@@ -85,9 +85,9 @@ window.addEventListener('popstate', function(event) {
     }
 });
 
-document.addEventListener('DOMContentLoaded', async function() {
+document.addEventListener('DOMContentLoaded', async function () {
     console.log('DOM Content Loaded');
-    
+
     // Ensure only one navbar exists and it's clean
     const existingNavbars = document.querySelectorAll('nav[id="navbar"]');
     if (existingNavbars.length > 1) {
@@ -95,9 +95,9 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (index > 0) nav.remove();
         });
     }
-    
+
     const initialPage = getPageFromHash();
-    
+
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
         try {
@@ -107,14 +107,14 @@ document.addEventListener('DOMContentLoaded', async function() {
                 showNavbar();
                 // Prefer the current page hash on refresh, fall back to default landing page
                 let targetPage = initialPage;
-                
+
                 // Verify user can access the current page, otherwise use default
                 if (!targetPage || !canAccessPage(targetPage)) {
                     targetPage = getDefaultLandingPage();
                 } else if (!targetPage) {
                     targetPage = getDefaultLandingPage();
                 }
-                
+
                 navigateTo(targetPage);
             }
         } catch (error) {
@@ -131,34 +131,34 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     const loginForm = document.getElementById('loginForm');
     if (loginForm) loginForm.addEventListener('submit', handleLogin);
-    
+
     const registerForm = document.getElementById('registerForm');
     if (registerForm) registerForm.addEventListener('submit', handleRegister);
-    
+
     const messageInput = document.getElementById('messageInput');
     if (messageInput) {
-        messageInput.addEventListener('keypress', function(e) {
+        messageInput.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') sendMessage();
         });
     }
 
     const userVolunteerMessageInput = document.getElementById('userVolunteerMessageInput');
     if (userVolunteerMessageInput) {
-        userVolunteerMessageInput.addEventListener('keypress', function(e) {
+        userVolunteerMessageInput.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') sendUserVolunteerMessage();
         });
     }
 
     const volunteerSecureChatInput = document.getElementById('volunteerSecureChatInput');
     if (volunteerSecureChatInput) {
-        volunteerSecureChatInput.addEventListener('keypress', function(e) {
+        volunteerSecureChatInput.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') sendVolunteerSecureMessage();
         });
     }
 
     const feelingInput = document.getElementById('feelingPostInput');
     if (feelingInput) {
-        feelingInput.addEventListener('input', function() {
+        feelingInput.addEventListener('input', function () {
             const counter = document.getElementById('feelingCharCount');
             if (counter) counter.textContent = `${this.value.length} / 300`;
         });
@@ -166,7 +166,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     const volunteerPostInput = document.getElementById('volunteerPostInput');
     if (volunteerPostInput) {
-        volunteerPostInput.addEventListener('input', function() {
+        volunteerPostInput.addEventListener('input', function () {
             const counter = document.getElementById('volunteerPostCharCount');
             if (counter) counter.textContent = `${this.value.length} / 280`;
         });
@@ -361,7 +361,7 @@ function showNavbar() {
         allNavbars.forEach((nav, index) => {
             if (index > 0) nav.remove();
         });
-        
+
         // Show the single navbar
         navbar.classList.remove('hidden');
         navbar.style.display = '';
@@ -856,7 +856,7 @@ function loadMoodTrendChart(moodHistory) {
                     tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', padding: 12, cornerRadius: 8 }
                 },
                 scales: {
-                    y: { beginAtZero: true, max: 5, ticks: { stepSize: 1, callback: (v) => ['Stressed','Sad','Anxious','Neutral','Calm','Happy'][v] || '', font: { size: 12 }, padding: 8 }, grid: { color: 'rgba(0,0,0,0.05)', drawBorder: false } },
+                    y: { beginAtZero: true, max: 5, ticks: { stepSize: 1, callback: (v) => ['Stressed', 'Sad', 'Anxious', 'Neutral', 'Calm', 'Happy'][v] || '', font: { size: 12 }, padding: 8 }, grid: { color: 'rgba(0,0,0,0.05)', drawBorder: false } },
                     x: { grid: { display: false }, ticks: { font: { size: 12 }, padding: 8 } }
                 }
             }
@@ -964,11 +964,11 @@ function renderMoodResponse(moodResponse, moodEntry) {
 
     // Build gradient based on mood color
     const gradients = {
-        happy:    'from-yellow-50 to-amber-50 border-yellow-300',
-        sad:      'from-blue-50 to-indigo-50 border-blue-300',
+        happy: 'from-yellow-50 to-amber-50 border-yellow-300',
+        sad: 'from-blue-50 to-indigo-50 border-blue-300',
         stressed: 'from-red-50 to-rose-50 border-red-300',
-        anxious:  'from-orange-50 to-amber-50 border-orange-300',
-        calm:     'from-green-50 to-emerald-50 border-green-300'
+        anxious: 'from-orange-50 to-amber-50 border-orange-300',
+        calm: 'from-green-50 to-emerald-50 border-green-300'
     };
     const gradientClass = gradients[moodEntry.mood] || 'from-gray-50 to-slate-50 border-gray-300';
 
@@ -1109,11 +1109,11 @@ function startVolunteerSecureChatPolling() {
 async function initChatSection() {
     // Restore chat history from server on section open
     if (!currentUser) return;
-    
+
     // Reset to AI chat mode on init
     currentChatMode = 'ai';
     showAIChat();
-    
+
     // Recover handoff context if chat opened after a delayed navigation.
     if (!quizResultData) {
         const storedQuizData = getStoredQuizResultContext();
@@ -1131,7 +1131,7 @@ async function initChatSection() {
         // Otherwise, load regular chat history with default greeting
         loadChatHistory();
     }
-    
+
     if (currentUser.role === 'user') {
         // Await volunteer chat check so userAssignedVolunteerId is set before showing toggle
         await loadUserVolunteerSecureChat();
@@ -1154,7 +1154,7 @@ function showAIChat() {
     const volunteerBox = document.getElementById('volunteerChatBox');
     const aiBtn = document.getElementById('aiChatBtn');
     const volunteerBtn = document.getElementById('volunteerChatBtn');
-    
+
     if (aiBox) aiBox.classList.remove('hidden');
     if (volunteerBox) volunteerBox.classList.add('hidden');
     if (aiBtn) {
@@ -1172,7 +1172,7 @@ function showVolunteerChat() {
     const volunteerBox = document.getElementById('volunteerChatBox');
     const aiBtn = document.getElementById('aiChatBtn');
     const volunteerBtn = document.getElementById('volunteerChatBtn');
-    
+
     if (aiBox) aiBox.classList.add('hidden');
     if (volunteerBox) volunteerBox.classList.remove('hidden');
     if (aiBtn) {
@@ -1187,9 +1187,9 @@ function showVolunteerChat() {
 
 function checkAndShowVolunteerChatButton() {
     const volunteerBtn = document.getElementById('volunteerChatBtn');
-    
+
     if (!volunteerBtn) return;
-    
+
     // Check if user has an assigned volunteer
     if (userAssignedVolunteerId) {
         volunteerBtn.classList.remove('hidden');
@@ -1202,7 +1202,7 @@ function checkAndShowVolunteerChatButton() {
 
 async function injectQuizDataIntoChatbot() {
     if (!quizResultData) return;
-    
+
     const { score, feedback } = quizResultData;
     const container = document.getElementById('messageContainer');
     if (!container) return;
@@ -1223,7 +1223,7 @@ async function injectQuizDataIntoChatbot() {
         summaryLines.push(`\nAreas for Growth:\n` + feedback.weaknesses.map(w => `• ${w}`).join('\n'));
     }
     if (feedback.suggestions && feedback.suggestions.length > 0) {
-        summaryLines.push(`\nAI Suggestions:\n` + feedback.suggestions.map((s, i) => `${i+1}. ${s}`).join('\n'));
+        summaryLines.push(`\nAI Suggestions:\n` + feedback.suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n'));
     }
     const summaryText = summaryLines.join('\n');
 
@@ -1300,7 +1300,7 @@ function generateMoodBasedResponse(score, feedback) {
     let response = '';
     const mood = (feedback.mood || 'neutral').toLowerCase();
     const category = (feedback.category || 'general').toLowerCase();
-    
+
     // Generate personalized response based on mood and score
     if (score >= 80) {
         response = `Great results! 🎉 You're managing well overall. Let's focus on strengthening those areas you mentioned and building resilience in the weak spots.`;
@@ -1311,7 +1311,7 @@ function generateMoodBasedResponse(score, feedback) {
     } else {
         response = `I hear that you're going through a tough time. Please know I'm here to listen and support you. Let's start by talking through what's bothering you most.`;
     }
-    
+
     // Add mood-specific tone
     if (mood === 'anxious' || mood === 'stress') {
         response += ` 😰 It sounds like anxiety is present. Let's explore some calming strategies together.`;
@@ -1322,9 +1322,9 @@ function generateMoodBasedResponse(score, feedback) {
     } else if (mood === 'overwhelmed') {
         response += ` 🌊 Feeling overwhelmed is completely normal. Let's break things down into manageable steps.`;
     }
-    
+
     response += ` What would you like to talk about first?`;
-    
+
     return response;
 }
 
@@ -1347,9 +1347,26 @@ async function loadChatHistory() {
 }
 
 async function startNewChatSession() {
+    // Analyze mood from the conversation before clearing it
+    let moodData = null;
+    try {
+        const analyzeRes = await fetch(`${API_BASE}/chat/analyze-mood`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.user_id, session_id: 'default' })
+        });
+        const analyzeResult = await analyzeRes.json();
+        if (analyzeRes.ok && analyzeResult.analyzed && analyzeResult.saved) {
+            moodData = analyzeResult;
+        }
+    } catch (e) {
+        console.warn('Mood analysis before new session failed:', e);
+    }
+
     try {
         await fetch(`${API_BASE}/chat/${currentUser.user_id}`, { method: 'DELETE' });
     } catch (e) { /* ignore */ }
+
     const container = document.getElementById('messageContainer');
     container.innerHTML = `<div class="flex items-start gap-3">
         <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">N</div>
@@ -1357,7 +1374,80 @@ async function startNewChatSession() {
             <p class="text-gray-800 text-sm">Hi! I'm Nyxie 💜 A fresh conversation, a fresh start. What's on your mind today?</p>
         </div>
     </div>`;
-    showToast('New session started', 'success');
+
+    if (moodData && moodData.mood_entry) {
+        showChatMoodInsight(moodData);
+        showToast('Mood updated from your conversation 💜', 'success');
+    } else {
+        showToast('New session started', 'success');
+    }
+}
+
+function showChatMoodInsight(moodData) {
+    // Remove any existing insight card
+    const existing = document.getElementById('chatMoodInsight');
+    if (existing) existing.remove();
+
+    const mood = moodData.mood_entry;
+    const classifier = moodData.classifier || {};
+    const moodName = (mood.mood || 'neutral').charAt(0).toUpperCase() + (mood.mood || 'neutral').slice(1);
+    const dominantEmotion = classifier.dominant_emotion || mood.mood;
+    const sentimentScore = classifier.sentiment_score != null ? classifier.sentiment_score : 0;
+    const sentimentLabel = sentimentScore > 0.3 ? 'Positive' : sentimentScore < -0.3 ? 'Negative' : 'Neutral';
+    const sentimentColor = sentimentScore > 0.3 ? '#22c55e' : sentimentScore < -0.3 ? '#ef4444' : '#f59e0b';
+    const sourceLabel = classifier.source === 'mistral' ? 'Mistral AI' : 'Keyword Analysis';
+
+    // Build emotion tags
+    const emotionTags = (classifier.emotions || []).slice(0, 3).map(e => {
+        const emotionName = e.label.charAt(0).toUpperCase() + e.label.slice(1);
+        const pct = Math.round((e.score || 0) * 100);
+        return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium" style="background: ${mood.color}22; color: ${mood.color}; border: 1px solid ${mood.color}44;">${emotionName} ${pct}%</span>`;
+    }).join('');
+
+    const insightCard = document.createElement('div');
+    insightCard.id = 'chatMoodInsight';
+    insightCard.style.cssText = 'opacity: 0; transform: translateY(-12px); transition: all 0.5s cubic-bezier(0.16,1,0.3,1);';
+    insightCard.innerHTML = `
+        <div class="mx-auto max-w-sm mb-4 rounded-2xl overflow-hidden shadow-lg border" style="border-color: ${mood.color}44; background: linear-gradient(135deg, ${mood.color}08, ${mood.color}18);">
+            <div class="px-4 py-3">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-2xl">${mood.emoji}</span>
+                        <div>
+                            <p class="text-sm font-bold text-gray-800">Mood Detected: ${moodName}</p>
+                            <p class="text-xs text-gray-500">from your conversation • ${sourceLabel}</p>
+                        </div>
+                    </div>
+                    <button onclick="document.getElementById('chatMoodInsight').remove()" class="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+                </div>
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="text-xs font-semibold px-2 py-0.5 rounded-full" style="background: ${sentimentColor}20; color: ${sentimentColor};">${sentimentLabel} (${sentimentScore > 0 ? '+' : ''}${sentimentScore.toFixed(2)})</span>
+                    <span class="text-xs text-gray-400">•</span>
+                    <span class="text-xs text-gray-500">Dominant: ${dominantEmotion}</span>
+                </div>
+                ${emotionTags ? `<div class="flex flex-wrap gap-1 mb-2">${emotionTags}</div>` : ''}
+                <div class="flex items-center gap-2 mt-2">
+                    <button onclick="navigateTo('mood-tracker')" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">📊 View Mood Tracker →</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const container = document.getElementById('messageContainer');
+    if (container) {
+        container.insertBefore(insightCard, container.firstChild);
+        // Animate in
+        requestAnimationFrame(() => {
+            insightCard.style.opacity = '1';
+            insightCard.style.transform = 'translateY(0)';
+        });
+        // Auto-dismiss after 6 seconds
+        setTimeout(() => {
+            insightCard.style.opacity = '0';
+            insightCard.style.transform = 'translateY(-12px)';
+            setTimeout(() => insightCard.remove(), 500);
+        }, 6000);
+    }
 }
 
 function toggleJournalingMode() {
@@ -1735,11 +1825,11 @@ async function viewVolunteerUserProfile(userId) {
                 <div class="bg-amber-50 rounded-xl p-4 border border-amber-100">
                     <p class="text-xs text-amber-700 font-semibold mb-1">Latest Quiz</p>
                     ${latestQuiz
-                        ? `<p class="text-sm text-gray-700">Stress: ${escapeHtml(latestQuiz.stress_level || 'Unknown')}</p>
+                ? `<p class="text-sm text-gray-700">Stress: ${escapeHtml(latestQuiz.stress_level || 'Unknown')}</p>
                            <p class="text-sm text-gray-700">Score: ${escapeHtml(String(latestQuiz.score ?? '-'))}</p>
                            <p class="text-sm text-gray-600">${escapeHtml(latestQuiz.recommendation || '')}</p>`
-                        : '<p class="text-sm text-gray-600">No quiz data yet</p>'
-                    }
+                : '<p class="text-sm text-gray-600">No quiz data yet</p>'
+            }
                 </div>
             </div>
         `;
@@ -2054,7 +2144,7 @@ function loadMoodDistributionChart(moodDistribution) {
     const ctx = document.getElementById('moodDistributionChart');
     const labels = Object.keys(moodDistribution);
     const values = Object.values(moodDistribution);
-    const colors = ['#FFD700','#4169E1','#FF6347','#FF8C00','#90EE90'];
+    const colors = ['#FFD700', '#4169E1', '#FF6347', '#FF8C00', '#90EE90'];
     if (moodDistributionChart) moodDistributionChart.destroy();
     moodDistributionChart = new Chart(ctx, { type: 'doughnut', data: { labels, datasets: [{ data: values, backgroundColor: colors.slice(0, labels.length), borderColor: '#fff', borderWidth: 2 }] }, options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 12 } } } } } });
 }
@@ -2063,7 +2153,7 @@ function loadRoleDistributionChart(roleDistribution) {
     const ctx = document.getElementById('roleDistributionChart');
     const labels = Object.keys(roleDistribution);
     const values = Object.values(roleDistribution);
-    const colors = ['#667eea','#764ba2','#f44336'];
+    const colors = ['#667eea', '#764ba2', '#f44336'];
     if (roleDistributionChart) roleDistributionChart.destroy();
     roleDistributionChart = new Chart(ctx, { type: 'bar', data: { labels, datasets: [{ label: 'Number of Users', data: values, backgroundColor: colors.slice(0, labels.length), borderRadius: 8 }] }, options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } } });
 }
@@ -2076,21 +2166,27 @@ let breathingRound = 1;
 let currentTechnique = 'relaxed';
 
 const BREATHING_TECHNIQUES = {
-    relaxed: { name: 'Box Breathing', phases: [
-        { label: 'Breathe In', duration: 4, action: 'expand' },
-        { label: 'Hold', duration: 4, action: 'hold' },
-        { label: 'Breathe Out', duration: 4, action: 'shrink' },
-        { label: 'Hold', duration: 4, action: 'hold' }
-    ]},
-    calming: { name: '4-7-8 Technique', phases: [
-        { label: 'Breathe In', duration: 4, action: 'expand' },
-        { label: 'Hold', duration: 7, action: 'hold' },
-        { label: 'Breathe Out', duration: 8, action: 'shrink' }
-    ]},
-    energizing: { name: 'Quick Breath', phases: [
-        { label: 'Breathe In', duration: 2, action: 'expand' },
-        { label: 'Breathe Out', duration: 2, action: 'shrink' }
-    ]}
+    relaxed: {
+        name: 'Box Breathing', phases: [
+            { label: 'Breathe In', duration: 4, action: 'expand' },
+            { label: 'Hold', duration: 4, action: 'hold' },
+            { label: 'Breathe Out', duration: 4, action: 'shrink' },
+            { label: 'Hold', duration: 4, action: 'hold' }
+        ]
+    },
+    calming: {
+        name: '4-7-8 Technique', phases: [
+            { label: 'Breathe In', duration: 4, action: 'expand' },
+            { label: 'Hold', duration: 7, action: 'hold' },
+            { label: 'Breathe Out', duration: 8, action: 'shrink' }
+        ]
+    },
+    energizing: {
+        name: 'Quick Breath', phases: [
+            { label: 'Breathe In', duration: 2, action: 'expand' },
+            { label: 'Breathe Out', duration: 2, action: 'shrink' }
+        ]
+    }
 };
 
 function selectBreathingTechnique(technique) {
@@ -2218,7 +2314,7 @@ function initJournal() {
     // Character counter
     const textarea = document.getElementById('journalEntry');
     if (textarea) {
-        textarea.addEventListener('input', function() {
+        textarea.addEventListener('input', function () {
             const count = document.getElementById('journalCharCount');
             if (count) count.textContent = `${this.value.length} characters`;
         });
@@ -2292,7 +2388,7 @@ function deleteJournalEntry(id) {
 
 // Initialize journal when navigating to journal page
 const originalNavigateTo = navigateTo;
-navigateTo = function(page) {
+navigateTo = function (page) {
     originalNavigateTo(page);
 
     if (page === 'messaging' && currentUser && currentUser.role === 'user') {

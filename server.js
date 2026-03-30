@@ -7,6 +7,7 @@ const path = require('path');
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -55,6 +56,178 @@ const QUIZ_QUESTIONS = [
 
 const MOOD_EMOJI = { happy: '😊', sad: '😢', stressed: '😰', anxious: '😟', calm: '😌' };
 const MOOD_COLORS = { happy: '#FFD700', sad: '#4169E1', stressed: '#FF6347', anxious: '#FF8C00', calm: '#90EE90' };
+
+// ─── Emotion-to-Mood Mapping (GoEmotions → 5 app moods) ────────────────────
+const EMOTION_TO_MOOD = {
+  joy: 'happy', amusement: 'happy', excitement: 'happy', love: 'happy',
+  admiration: 'happy', pride: 'happy',
+  sadness: 'sad', grief: 'sad', disappointment: 'sad', remorse: 'sad',
+  anger: 'stressed', annoyance: 'stressed', disgust: 'stressed', embarrassment: 'stressed',
+  fear: 'anxious', nervousness: 'anxious', confusion: 'anxious',
+  relief: 'calm', gratitude: 'calm', approval: 'calm', caring: 'calm',
+  optimism: 'calm', neutral: 'calm', curiosity: 'calm', desire: 'calm',
+  realization: 'calm', surprise: 'calm'
+};
+
+function mapEmotionToMood(dominantEmotion) {
+  return EMOTION_TO_MOOD[(dominantEmotion || '').toLowerCase()] || 'calm';
+}
+
+// ─── Node.js keyword-based fallback classifier ─────────────────────────────
+const KEYWORD_MOOD_MAP = {
+  happy: ['happy', 'joy', 'excited', 'great', 'wonderful', 'amazing', 'love', 'fun',
+    'laugh', 'smile', 'grateful', 'thankful', 'proud', 'awesome', 'fantastic',
+    'good', 'blessed', 'cheerful', 'delighted', 'pleased'],
+  sad: ['sad', 'cry', 'crying', 'depressed', 'lonely', 'alone', 'miss', 'lost',
+    'grief', 'heartbroken', 'disappointed', 'unhappy', 'miserable', 'regret',
+    'sorry', 'hopeless', 'empty', 'numb', 'pain', 'hurt'],
+  stressed: ['stressed', 'pressure', 'overwhelmed', 'angry', 'frustrated',
+    'irritated', 'annoyed', 'exhausted', 'burnout', 'tired', 'overwork',
+    'deadline', 'tension', 'rage', 'furious', 'hate'],
+  anxious: ['anxious', 'anxiety', 'worried', 'nervous', 'panic', 'scared',
+    'afraid', 'fear', 'restless', 'uneasy', 'dread', 'overthink',
+    'insecure', 'uncertain', 'confused', 'tense'],
+  calm: ['calm', 'peaceful', 'relaxed', 'content', 'serene', 'fine', 'okay',
+    'alright', 'balanced', 'steady', 'mindful', 'meditat', 'breathing',
+    'chill', 'comfortable', 'safe', 'secure']
+};
+
+function keywordFallbackClassifier(text) {
+  const lower = (text || '').toLowerCase();
+  const scores = {};
+  for (const [mood, keywords] of Object.entries(KEYWORD_MOOD_MAP)) {
+    scores[mood] = 0;
+    for (const kw of keywords) {
+      // Count occurrences
+      const regex = new RegExp(`\\b${kw}`, 'gi');
+      const matches = lower.match(regex);
+      if (matches) scores[mood] += matches.length;
+    }
+  }
+  const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  const topMood = sorted[0][1] > 0 ? sorted[0][0] : 'calm';
+  return {
+    dominant_emotion: topMood,
+    sentiment_score: topMood === 'happy' ? 0.6 : topMood === 'calm' ? 0.3 : topMood === 'sad' ? -0.6 : topMood === 'anxious' ? -0.4 : -0.3,
+    emotions: sorted.filter(([, s]) => s > 0).map(([label, score]) => ({ label, score: Math.min(score / 5, 1) })),
+    source: 'keyword_fallback'
+  };
+}
+
+// ─── Analyze chat transcript and push mood ──────────────────────────────────
+async function analyzeAndPushMood(userId, sessionId = 'default') {
+  try {
+    // 1. Fetch user messages from this session
+    const { data: chatMessages, error: chatError } = await supabase
+      .from('ai_chats')
+      .select('sender, message, created_at')
+      .eq('user_id', userId)
+      .eq('session_id', sessionId)
+      .eq('sender', 'user')
+      .order('created_at', { ascending: true });
+
+    if (chatError || !chatMessages || chatMessages.length === 0) {
+      return { analyzed: false, reason: 'no_messages' };
+    }
+
+    // 2. Concatenate user messages into a transcript
+    const transcript = chatMessages.map(m => m.message).join('. ');
+    if (transcript.trim().length < 10) {
+      return { analyzed: false, reason: 'transcript_too_short' };
+    }
+
+    let classifierResult = null;
+
+    // 3. Try Mistral API for emotion classification
+    if (process.env.MISTRAL_API_KEY) {
+      try {
+        const mistral = await getMistral();
+        const classifyPrompt = `Analyze the emotional content of the following user messages from a mental health chat session. Return ONLY valid JSON with no markdown formatting.
+
+User messages:
+"""${transcript.slice(0, 3000)}"""
+
+Return this exact JSON structure:
+{
+  "dominant_emotion": "<one of: joy, sadness, anger, fear, love, surprise, disgust, grief, nervousness, embarrassment, pride, relief, gratitude, optimism, excitement, amusement, admiration, approval, caring, confusion, curiosity, desire, disappointment, disapproval, annoyance, remorse, realization, neutral>",
+  "sentiment_score": <number from -1.0 (very negative) to 1.0 (very positive)>,
+  "emotions": [
+    {"label": "<emotion>", "score": <0.0 to 1.0>},
+    {"label": "<emotion>", "score": <0.0 to 1.0>},
+    {"label": "<emotion>", "score": <0.0 to 1.0>}
+  ]
+}
+
+Respond with ONLY the JSON object, nothing else.`;
+
+        const classifyResponse = await mistral.chat.complete({
+          model: 'mistral-small-latest',
+          messages: [{ role: 'user', content: classifyPrompt }],
+          maxTokens: 200,
+          temperature: 0.1
+        });
+
+        const rawText = classifyResponse.choices[0].message.content.trim();
+        const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+        classifierResult = {
+          dominant_emotion: parsed.dominant_emotion || 'neutral',
+          sentiment_score: typeof parsed.sentiment_score === 'number' ? parsed.sentiment_score : 0,
+          emotions: Array.isArray(parsed.emotions) ? parsed.emotions.slice(0, 4) : [],
+          source: 'mistral'
+        };
+        console.log('Mistral emotion classification for user:', userId, '->', classifierResult.dominant_emotion);
+      } catch (mistralError) {
+        console.warn('Mistral classifier failed, using keyword fallback:', mistralError.message);
+      }
+    }
+
+    // 4. Fall back to keyword classifier if Mistral didn't work
+    if (!classifierResult) {
+      console.log('Using keyword fallback classifier for user:', userId);
+      classifierResult = keywordFallbackClassifier(transcript);
+    }
+
+    // 5. Map to app mood
+    const mood = classifierResult.source === 'keyword_fallback'
+      ? classifierResult.dominant_emotion
+      : mapEmotionToMood(classifierResult.dominant_emotion);
+
+    // 6. Insert mood into mood_logs
+    const { data: insertedMood, error: insertError } = await supabase
+      .from('mood_logs')
+      .insert([{ user_id: userId, mood }])
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('Failed to insert auto mood:', insertError.message);
+      return { analyzed: true, saved: false, error: insertError.message };
+    }
+
+    return {
+      analyzed: true,
+      saved: true,
+      mood,
+      mood_entry: {
+        mood: insertedMood.mood,
+        timestamp: insertedMood.created_at,
+        emoji: MOOD_EMOJI[insertedMood.mood] || '😐',
+        color: MOOD_COLORS[insertedMood.mood] || '#808080',
+        source: 'ai_chat'
+      },
+      classifier: {
+        dominant_emotion: classifierResult.dominant_emotion,
+        sentiment_score: classifierResult.sentiment_score,
+        emotions: (classifierResult.emotions || []).slice(0, 4),
+        source: classifierResult.source
+      }
+    };
+  } catch (err) {
+    console.error('analyzeAndPushMood error:', err);
+    return { analyzed: false, reason: 'internal_error', error: err.message };
+  }
+}
 
 const ANON_PREFIXES = ['Calm', 'Kind', 'Brave', 'Quiet', 'Gentle', 'Bright', 'Steady', 'Hopeful'];
 const ANON_ANIMALS = ['Otter', 'Robin', 'Koala', 'Panda', 'Fox', 'Dolphin', 'Sparrow', 'Turtle'];
@@ -722,6 +895,18 @@ app.get('/api/chat/:user_id', async (req, res) => {
   return res.status(200).json({ messages });
 });
 
+// ─── Analyze mood from chat conversation ────────────────────────────────────
+app.post('/api/chat/analyze-mood', async (req, res) => {
+  const { user_id, session_id } = req.body;
+  const check = await requireUserWithRole(user_id, 'user');
+  if (!check.ok) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const result = await analyzeAndPushMood(user_id, session_id || 'default');
+  return res.status(200).json(result);
+});
+
 app.delete('/api/chat/:user_id', async (req, res) => {
   const userId = req.params.user_id;
   const check = await requireUserWithRole(userId, 'user');
@@ -1132,11 +1317,11 @@ app.get('/api/volunteer/user-profile/:volunteer_id/:user_id', async (req, res) =
     },
     request: hasOpenRequest
       ? {
-          status: 'open',
-          requested_at: new Date().toISOString(),
-          note: '',
-          resolved_at: null
-        }
+        status: 'open',
+        requested_at: new Date().toISOString(),
+        note: '',
+        resolved_at: null
+      }
       : null,
     mood: {
       current_mood: moods.length ? moods[moods.length - 1] : { mood: 'neutral', emoji: '😐', color: '#808080' },
@@ -1147,10 +1332,10 @@ app.get('/api/volunteer/user-profile/:volunteer_id/:user_id', async (req, res) =
     quiz: {
       latest: riskMap[userId]
         ? {
-            stress_level: riskMap[userId].stress_level,
-            average_score: riskMap[userId].average_score,
-            timestamp: riskMap[userId].last_quiz_date
-          }
+          stress_level: riskMap[userId].stress_level,
+          average_score: riskMap[userId].average_score,
+          timestamp: riskMap[userId].last_quiz_date
+        }
         : null,
       recent_history: []
     },
@@ -1190,11 +1375,11 @@ app.get('/api/secure-chat/user/:user_id', async (req, res) => {
   const messages = (data || [])
     .filter((m) => m.message !== VOLUNTEER_CTRL_ASSIGN && m.message !== VOLUNTEER_CTRL_RELEASE)
     .map((m) => ({
-    sender_role: m.sender === 'user' ? 'user' : 'volunteer',
-    sender_id: m.sender === 'user' ? userId : volunteerId,
-    text: m.message,
-    timestamp: m.created_at
-  }));
+      sender_role: m.sender === 'user' ? 'user' : 'volunteer',
+      sender_id: m.sender === 'user' ? userId : volunteerId,
+      text: m.message,
+      timestamp: m.created_at
+    }));
 
   return res.status(200).json({
     connected: true,
@@ -1274,11 +1459,11 @@ app.get('/api/secure-chat/volunteer/:volunteer_id/:user_id', async (req, res) =>
   const messages = (data || [])
     .filter((m) => m.message !== VOLUNTEER_CTRL_ASSIGN && m.message !== VOLUNTEER_CTRL_RELEASE)
     .map((m) => ({
-    sender_role: m.sender === 'user' ? 'user' : 'volunteer',
-    sender_id: m.sender === 'user' ? userId : volunteerId,
-    text: m.message,
-    timestamp: m.created_at
-  }));
+      sender_role: m.sender === 'user' ? 'user' : 'volunteer',
+      sender_id: m.sender === 'user' ? userId : volunteerId,
+      text: m.message,
+      timestamp: m.created_at
+    }));
   return res.status(200).json({ connected: true, messages });
 });
 
