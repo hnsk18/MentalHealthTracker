@@ -73,4 +73,49 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // Store feedback globally for chatbot access
+    window.quizFeedbackData = {
+        score,
+        feedback
+    };
+
 });
+
+// Function to send quiz data to parent window and navigate to chatbot
+function sendQuizDataToChatbot() {
+    try {
+        if (!window.quizFeedbackData) {
+            alert('No quiz data found. Please complete the quiz first.');
+            return;
+        }
+
+        const payload = {
+            score: window.quizFeedbackData.score,
+            feedback: window.quizFeedbackData.feedback
+        };
+
+        if (window.parent && window.parent !== window) {
+            // Preferred route: set parent quiz context and navigate in one deterministic call.
+            if (typeof window.parent.receiveQuizResultAndNavigate === 'function') {
+                window.parent.receiveQuizResultAndNavigate(payload);
+            } else {
+                // Fallback: send postMessage and then navigate to chat.
+                window.parent.postMessage({ type: 'QUIZ_RESULT', data: payload }, '*');
+                if (typeof window.parent.navigateTo === 'function') {
+                    window.parent.navigateTo('messaging');
+                } else {
+                    window.parent.location.hash = '#messaging';
+                }
+            }
+        } else {
+            // Not in iframe — navigate directly
+            window.location.hash = '#messaging';
+        }
+    } catch (error) {
+        console.error('Error sending quiz data:', error);
+        // Safe fallback
+        if (window.parent && window.parent !== window) {
+            window.parent.location.hash = '#messaging';
+        }
+    }
+}

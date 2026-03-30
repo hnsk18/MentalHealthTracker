@@ -12,11 +12,91 @@ let latestUsersNeedingHelp = [];
 let volunteerHandlingUsers = [];
 let selectedVolunteerSecureUserId = null;
 let userAssignedVolunteerId = null;
+let userSecureChatPollTimer = null;
+let volunteerSecureChatPollTimer = null;
+let lastUserSecureChatHash = '';
+let lastVolunteerSecureChatHash = '';
+let quizResultData = null;
+let currentChatMode = 'ai';
+const QUIZ_RESULT_STORAGE_KEY = 'mindmitra_quiz_result';
+
+function normalizeQuizResultPayload(payload) {
+    if (!payload || typeof payload !== 'object') return null;
+    const score = Number(payload.score);
+    const feedback = payload.feedback;
+    if (!Number.isFinite(score) || !feedback || typeof feedback !== 'object') return null;
+    return { score, feedback };
+}
+
+function setQuizResultContext(payload, persist = true) {
+    const normalized = normalizeQuizResultPayload(payload);
+    if (!normalized) return false;
+
+    quizResultData = normalized;
+    if (persist) {
+        sessionStorage.setItem(QUIZ_RESULT_STORAGE_KEY, JSON.stringify(normalized));
+    }
+    return true;
+}
+
+function getStoredQuizResultContext() {
+    try {
+        const raw = sessionStorage.getItem(QUIZ_RESULT_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return normalizeQuizResultPayload(parsed);
+    } catch (e) {
+        return null;
+    }
+}
+
+function clearStoredQuizResultContext() {
+    sessionStorage.removeItem(QUIZ_RESULT_STORAGE_KEY);
+}
+
+// Used by quiz result iframe for deterministic handoff before navigating to messaging.
+window.receiveQuizResultAndNavigate = function(payload) {
+    const ok = setQuizResultContext(payload, true);
+    if (!ok) return;
+    navigateTo('messaging');
+};
 
 // ==================== Initialization ====================
 
+// Listen for messages from quiz iframe
+window.addEventListener('message', function(event) {
+    if (event.data && event.data.type === 'QUIZ_RESULT') {
+        setQuizResultContext(event.data.data, true);
+        console.log('Quiz data received:', quizResultData);
+    }
+});
+
+// Handle browser back/forward buttons to preserve page navigation
+window.addEventListener('popstate', function(event) {
+    const pageFromHash = getPageFromHash();
+    if (pageFromHash && currentUser && canAccessPage(pageFromHash)) {
+        navigateTo(pageFromHash);
+    } else if (pageFromHash && !currentUser && isPublicPage(pageFromHash)) {
+        navigateTo(pageFromHash);
+    } else if (currentUser) {
+        navigateTo(getDefaultLandingPage());
+    } else {
+        navigateTo('home');
+    }
+});
+
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('DOM Content Loaded');
+    
+    // Ensure only one navbar exists and it's clean
+    const existingNavbars = document.querySelectorAll('nav[id="navbar"]');
+    if (existingNavbars.length > 1) {
+        existingNavbars.forEach((nav, index) => {
+            if (index > 0) nav.remove();
+        });
+    }
+    
+    const initialPage = getPageFromHash();
     
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
@@ -25,14 +105,28 @@ document.addEventListener('DOMContentLoaded', async function() {
             const sessionIsValid = await validateCurrentUserSession();
             if (sessionIsValid) {
                 showNavbar();
-                navigateTo(getDefaultLandingPage());
+                // Prefer the current page hash on refresh, fall back to default landing page
+                let targetPage = initialPage;
+                
+                // Verify user can access the current page, otherwise use default
+                if (!targetPage || !canAccessPage(targetPage)) {
+                    targetPage = getDefaultLandingPage();
+                } else if (!targetPage) {
+                    targetPage = getDefaultLandingPage();
+                }
+                
+                navigateTo(targetPage);
             }
         } catch (error) {
             console.error('Error loading saved user:', error);
-            navigateTo('home');
+            // If logged in user session fails, try to preserve page if it's public
+            const fallbackPage = initialPage && isPublicPage(initialPage) ? initialPage : 'home';
+            navigateTo(fallbackPage);
         }
     } else {
-        navigateTo('home');
+        // Not logged in - only allow public pages
+        const fallbackPage = initialPage && isPublicPage(initialPage) ? initialPage : 'home';
+        navigateTo(fallbackPage);
     }
 
     const loginForm = document.getElementById('loginForm');
@@ -99,12 +193,15 @@ function navigateTo(page) {
 
         document.querySelectorAll('.page-section').forEach(el => {
             el.classList.add('hidden');
-            el.style.display = 'none';
+            el.style.display = '';
         });
         const pageEl = document.getElementById(page);
         if (pageEl) {
             pageEl.classList.remove('hidden');
-            pageEl.style.display = 'block';
+            pageEl.style.display = '';
+            if (window.location.hash !== `#${page}`) {
+                history.replaceState(null, '', `#${page}`);
+            }
             if (page === 'dashboard') loadCommunityHome();
             else if (page === 'mood-tracker') loadMoodHistory();
             else if (page === 'profile') loadProfile();
@@ -117,6 +214,25 @@ function navigateTo(page) {
     } catch (error) {
         console.error('Error navigating to page:', error);
     }
+}
+
+function getPageFromHash() {
+    try {
+        const hash = window.location.hash ? window.location.hash.replace('#', '').trim() : '';
+        if (!hash) return null;
+        // Check if page element exists
+        const pageEl = document.getElementById(hash);
+        if (pageEl && pageEl.classList.contains('page-section')) {
+            return hash;
+        }
+        return null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function isPublicPage(page) {
+    return ['home', 'login', 'register'].includes(page);
 }
 
 function selectRole(role) { selectedRole = role; }
@@ -201,6 +317,7 @@ async function handleRegister(e) {
 }
 
 function logout() {
+    stopAllSecureChatPolling();
     currentUser = null;
     localStorage.removeItem('currentUser');
     hideNavbar();
@@ -211,6 +328,7 @@ function logout() {
 function handleInvalidSession(message = 'Your session expired after a server restart. Please login again.') {
     if (invalidSessionHandled) return;
     invalidSessionHandled = true;
+    stopAllSecureChatPolling();
     currentUser = null;
     localStorage.removeItem('currentUser');
     hideNavbar();
@@ -238,6 +356,13 @@ async function validateCurrentUserSession() {
 function showNavbar() {
     const navbar = document.getElementById('navbar');
     if (navbar) {
+        // Remove any duplicate navbars
+        const allNavbars = document.querySelectorAll('nav[id="navbar"]');
+        allNavbars.forEach((nav, index) => {
+            if (index > 0) nav.remove();
+        });
+        
+        // Show the single navbar
         navbar.classList.remove('hidden');
         navbar.style.display = '';
     }
@@ -334,34 +459,120 @@ function getCurrentPetName() {
     return petName;
 }
 
-function loadCommunityPosts() {
+async function loadCommunityPosts() {
     try {
-        communityPosts = JSON.parse(localStorage.getItem('communityPosts') || '[]');
+        const response = await fetch(`${API_BASE}/feed/posts`);
+        const data = await response.json();
+        if (!response.ok) {
+            communityPosts = [];
+            return;
+        }
+        communityPosts = data.posts || [];
     } catch (error) {
         communityPosts = [];
     }
 }
 
-function saveCommunityPosts() {
-    localStorage.setItem('communityPosts', JSON.stringify(communityPosts));
-}
-
 function formatPostTime(isoString) {
-    return new Date(isoString).toLocaleString();
+    const parsed = parseAppDateTime(isoString);
+    if (!parsed) return 'Unknown time';
+
+    const istDate = getISTDate(parsed);
+    const day = istDate.getUTCDate();
+    const month = istDate.getUTCMonth() + 1;
+    const year = istDate.getUTCFullYear();
+    const hour24 = istDate.getUTCHours();
+    const minutes = String(istDate.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(istDate.getUTCSeconds()).padStart(2, '0');
+    const hour12 = hour24 % 12 || 12;
+    const period = hour24 >= 12 ? 'pm' : 'am';
+
+    return `${day}/${month}/${year}, ${hour12}:${minutes}:${seconds} ${period} IST`;
 }
 
-function loadCommunityHome() {
+function formatPostDate(isoString) {
+    const parsed = parseAppDateTime(isoString);
+    if (!parsed) return 'Invalid date';
+
+    const istDate = getISTDate(parsed);
+    const monthIndex = istDate.getUTCMonth();
+    const day = istDate.getUTCDate();
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${monthNames[monthIndex]} ${day}`;
+}
+
+function getISTDate(dateObj) {
+    const IST_OFFSET_MINUTES = 330;
+    return new Date(dateObj.getTime() + IST_OFFSET_MINUTES * 60 * 1000);
+}
+
+function parseAppDateTime(value) {
+    if (!value) return null;
+
+    if (value instanceof Date) {
+        return Number.isNaN(value.getTime()) ? null : value;
+    }
+
+    if (typeof value === 'number') {
+        const ms = value < 1e12 ? value * 1000 : value;
+        const parsedNumberDate = new Date(ms);
+        return Number.isNaN(parsedNumberDate.getTime()) ? null : parsedNumberDate;
+    }
+
+    if (typeof value !== 'string') return null;
+
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    let parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+
+    // Normalize SQL-like timestamps that may come as "YYYY-MM-DD HH:mm:ss".
+    const normalized = trimmed.replace(' ', 'T');
+    parsed = new Date(normalized);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+
+    // If timezone is missing, assume UTC for backend-generated timestamps.
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(normalized)) {
+        parsed = new Date(`${normalized}Z`);
+        if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+
+    return null;
+}
+
+function anonymizeUserLabel(userId) {
+    const id = String(userId || '');
+    if (!id) return 'Anonymous Friend';
+    const prefixes = ['Calm', 'Kind', 'Brave', 'Quiet', 'Gentle', 'Bright', 'Steady', 'Hopeful'];
+    const animals = ['Otter', 'Robin', 'Koala', 'Panda', 'Fox', 'Dolphin', 'Sparrow', 'Turtle'];
+    const seed = id.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+    return `${prefixes[seed % prefixes.length]} ${animals[(seed * 7) % animals.length]}`;
+}
+
+function escapeHtml(text) {
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return String(text).replace(/[&<>"']/g, m => map[m]);
+}
+
+async function loadCommunityHome() {
     if (!currentUser) return;
 
     const petNameEl = document.getElementById('petNameDisplay');
     if (petNameEl) petNameEl.textContent = getCurrentPetName();
 
-    loadCommunityPosts();
+    await loadCommunityPosts();
     renderCommunityFeed();
     syncVolunteerRequestStatus();
 }
 
-function submitFeelingPost() {
+async function submitFeelingPost() {
     const input = document.getElementById('feelingPostInput');
     if (!input || !currentUser) return;
 
@@ -371,28 +582,32 @@ function submitFeelingPost() {
         return;
     }
 
-    const post = {
-        id: Date.now(),
-        userId: currentUser.user_id,
-        petName: getCurrentPetName(),
-        text,
-        timestamp: new Date().toISOString(),
-        comments: []
-    };
-
-    communityPosts.unshift(post);
-    if (communityPosts.length > 100) communityPosts = communityPosts.slice(0, 100);
-    saveCommunityPosts();
+    try {
+        const response = await fetch(`${API_BASE}/feed/posts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.user_id, caption: text })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            showToast(data.error || 'Unable to create post.', 'error');
+            return;
+        }
+    } catch (error) {
+        showToast('Unable to create post.', 'error');
+        return;
+    }
 
     input.value = '';
     const counter = document.getElementById('feelingCharCount');
     if (counter) counter.textContent = '0 / 300';
 
+    await loadCommunityPosts();
     renderCommunityFeed();
     showToast('Your feeling was posted anonymously.', 'success');
 }
 
-function addCommentToPost(postId) {
+async function addCommentToPost(postId) {
     const commentInput = document.getElementById(`commentInput-${postId}`);
     if (!commentInput || !currentUser) return;
 
@@ -402,57 +617,29 @@ function addCommentToPost(postId) {
         return;
     }
 
-    const post = communityPosts.find(p => p.id === postId);
-    if (!post) return;
+    try {
+        const response = await fetch(`${API_BASE}/feed/posts/${postId}/comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.user_id, comment: text })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            showToast(data.error || 'Unable to add comment.', 'error');
+            return;
+        }
+    } catch (error) {
+        showToast('Unable to add comment.', 'error');
+        return;
+    }
 
-    post.comments.push({
-        id: Date.now(),
-        userId: currentUser.user_id,
-        petName: getCurrentPetName(),
-        text,
-        timestamp: new Date().toISOString()
-    });
-
-    saveCommunityPosts();
     commentInput.value = '';
+    await loadCommunityPosts();
     renderCommunityFeed();
 }
 
 function seedCommunityPosts() {
-    if (communityPosts.length > 0) {
-        showToast('Sample posts are only added when feed is empty.', 'info');
-        return;
-    }
-
-    communityPosts = [
-        {
-            id: Date.now() - 2000,
-            userId: 9001,
-            petName: 'Luna Sparrow',
-            text: 'Today felt heavy, but I still finished my tasks. Trying to be kind to myself.',
-            timestamp: new Date(Date.now() - 3600 * 1000).toISOString(),
-            comments: [
-                {
-                    id: Date.now() - 1500,
-                    userId: 9002,
-                    petName: 'Misty Otter',
-                    text: 'That is strong. Small wins count a lot.',
-                    timestamp: new Date(Date.now() - 3200 * 1000).toISOString()
-                }
-            ]
-        },
-        {
-            id: Date.now() - 1000,
-            userId: 9003,
-            petName: 'Coco Fox',
-            text: 'I finally slept 7 hours. Mood already feels more stable.',
-            timestamp: new Date(Date.now() - 1800 * 1000).toISOString(),
-            comments: []
-        }
-    ];
-
-    saveCommunityPosts();
-    renderCommunityFeed();
+    showToast('Sample seeding is disabled in database mode. Create a real post instead.', 'info');
 }
 
 function renderCommunityFeed() {
@@ -487,7 +674,7 @@ function renderCommunityFeed() {
                 <div class="space-y-2 mb-3">${commentsHtml}</div>
                 <div class="flex gap-2">
                     <input id="commentInput-${post.id}" type="text" maxlength="160" placeholder="Write a kind comment..." class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-600" />
-                    <button onclick="addCommentToPost(${post.id})" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold">Comment</button>
+                    <button onclick="addCommentToPost('${post.id}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold">Comment</button>
                 </div>
             </div>
         `;
@@ -649,7 +836,7 @@ function loadMoodTrendChart(moodHistory) {
         return;
     }
     if (moodChart) { moodChart.destroy(); moodChart = null; }
-    const dates = moodHistory.slice(-7).map(m => new Date(m.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    const dates = moodHistory.slice(-7).map(m => formatPostDate(m.timestamp));
     const moodScores = { happy: 5, calm: 4, anxious: 2, sad: 1, stressed: 0, neutral: 3 };
     const moodValues = moodHistory.slice(-7).map(m => moodScores[m.mood] || 3);
     const ctx = canvasElement.getContext('2d');
@@ -858,7 +1045,7 @@ async function loadMoodHistory() {
         if (response.ok && data.mood_history && data.mood_history.length > 0) {
             let html = '';
             [...data.mood_history].reverse().forEach(mood => {
-                const time = new Date(mood.timestamp).toLocaleString();
+                const time = formatPostTime(mood.timestamp);
                 const moodName = mood.mood.charAt(0).toUpperCase() + mood.mood.slice(1);
                 html += `<div class="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border-l-4 hover:bg-gray-100 transition" style="border-color: ${mood.color}"><span style="font-size: 2rem">${mood.emoji}</span><div class="flex-1"><p class="font-semibold text-gray-800">${moodName}</p><p class="text-xs text-gray-500">${time}</p></div></div>`;
             });
@@ -875,13 +1062,270 @@ async function loadMoodHistory() {
 
 let isJournalingMode = false;
 
-function initChatSection() {
+function getSecureChatHash(messages) {
+    return JSON.stringify((messages || []).map((m) => `${m.sender_role}|${m.timestamp}|${m.text}`));
+}
+
+function stopUserSecureChatPolling() {
+    if (userSecureChatPollTimer) {
+        clearInterval(userSecureChatPollTimer);
+        userSecureChatPollTimer = null;
+    }
+}
+
+function stopVolunteerSecureChatPolling() {
+    if (volunteerSecureChatPollTimer) {
+        clearInterval(volunteerSecureChatPollTimer);
+        volunteerSecureChatPollTimer = null;
+    }
+}
+
+function stopAllSecureChatPolling() {
+    stopUserSecureChatPolling();
+    stopVolunteerSecureChatPolling();
+}
+
+function startUserSecureChatPolling() {
+    if (userSecureChatPollTimer || !currentUser || currentUser.role !== 'user') return;
+    userSecureChatPollTimer = setInterval(async () => {
+        const messagingPage = document.getElementById('messaging');
+        if (!messagingPage || messagingPage.classList.contains('hidden')) return;
+        await loadUserVolunteerSecureChat(true);
+    }, 2500);
+}
+
+function startVolunteerSecureChatPolling() {
+    if (volunteerSecureChatPollTimer || !currentUser || currentUser.role !== 'volunteer') return;
+    volunteerSecureChatPollTimer = setInterval(async () => {
+        const volunteerPage = document.getElementById('volunteer-dashboard');
+        if (!volunteerPage || volunteerPage.classList.contains('hidden')) return;
+        await loadVolunteerHandlingUsers();
+        if (selectedVolunteerSecureUserId) {
+            await fetchVolunteerSecureChatMessages(selectedVolunteerSecureUserId, true);
+        }
+    }, 2500);
+}
+
+async function initChatSection() {
     // Restore chat history from server on section open
     if (!currentUser) return;
-    loadChatHistory();
-    if (currentUser.role === 'user') {
-        loadUserVolunteerSecureChat();
+    
+    // Reset to AI chat mode on init
+    currentChatMode = 'ai';
+    showAIChat();
+    
+    // Recover handoff context if chat opened after a delayed navigation.
+    if (!quizResultData) {
+        const storedQuizData = getStoredQuizResultContext();
+        if (storedQuizData) {
+            quizResultData = storedQuizData;
+        }
     }
+
+    // If quiz results are available, inject them as context (skip normal chat history)
+    if (quizResultData) {
+        injectQuizDataIntoChatbot();
+        quizResultData = null; // Clear after using
+        clearStoredQuizResultContext();
+    } else {
+        // Otherwise, load regular chat history with default greeting
+        loadChatHistory();
+    }
+    
+    if (currentUser.role === 'user') {
+        // Await volunteer chat check so userAssignedVolunteerId is set before showing toggle
+        await loadUserVolunteerSecureChat();
+        checkAndShowVolunteerChatButton();
+        startUserSecureChatPolling();
+    }
+}
+
+function switchChatMode(mode) {
+    currentChatMode = mode;
+    if (mode === 'ai') {
+        showAIChat();
+    } else if (mode === 'volunteer') {
+        showVolunteerChat();
+    }
+}
+
+function showAIChat() {
+    const aiBox = document.getElementById('aiChatBox');
+    const volunteerBox = document.getElementById('volunteerChatBox');
+    const aiBtn = document.getElementById('aiChatBtn');
+    const volunteerBtn = document.getElementById('volunteerChatBtn');
+    
+    if (aiBox) aiBox.classList.remove('hidden');
+    if (volunteerBox) volunteerBox.classList.add('hidden');
+    if (aiBtn) {
+        aiBtn.classList.remove('bg-gray-100', 'text-gray-600');
+        aiBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700', 'text-white');
+    }
+    if (volunteerBtn) {
+        volunteerBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700', 'text-white');
+        volunteerBtn.classList.add('bg-gray-100', 'text-gray-600', 'hover:bg-gray-200');
+    }
+}
+
+function showVolunteerChat() {
+    const aiBox = document.getElementById('aiChatBox');
+    const volunteerBox = document.getElementById('volunteerChatBox');
+    const aiBtn = document.getElementById('aiChatBtn');
+    const volunteerBtn = document.getElementById('volunteerChatBtn');
+    
+    if (aiBox) aiBox.classList.add('hidden');
+    if (volunteerBox) volunteerBox.classList.remove('hidden');
+    if (aiBtn) {
+        aiBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700', 'text-white');
+        aiBtn.classList.add('bg-gray-100', 'text-gray-600', 'hover:bg-gray-200');
+    }
+    if (volunteerBtn) {
+        volunteerBtn.classList.remove('bg-gray-100', 'text-gray-600', 'hover:bg-gray-200');
+        volunteerBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700', 'text-white');
+    }
+}
+
+function checkAndShowVolunteerChatButton() {
+    const volunteerBtn = document.getElementById('volunteerChatBtn');
+    
+    if (!volunteerBtn) return;
+    
+    // Check if user has an assigned volunteer
+    if (userAssignedVolunteerId) {
+        volunteerBtn.classList.remove('hidden');
+        volunteerBtn.classList.add('flex');
+    } else {
+        volunteerBtn.classList.add('hidden');
+        volunteerBtn.classList.remove('flex');
+    }
+}
+
+async function injectQuizDataIntoChatbot() {
+    if (!quizResultData) return;
+    
+    const { score, feedback } = quizResultData;
+    const container = document.getElementById('messageContainer');
+    if (!container) return;
+
+    // Clear greeting and show quiz summary card
+    container.innerHTML = '';
+
+    // Build a human-readable summary of quiz results
+    let summaryLines = [];
+    summaryLines.push(`Score: ${score}%`);
+    summaryLines.push(`Category: ${feedback.category || 'Evaluated'}`);
+    summaryLines.push(`Mood: ${feedback.mood || 'Neutral'}`);
+    if (feedback.personalityType) summaryLines.push(`Personality: ${feedback.personalityType}`);
+    if (feedback.strengths && feedback.strengths.length > 0) {
+        summaryLines.push(`\nStrengths:\n` + feedback.strengths.map(s => `✓ ${s}`).join('\n'));
+    }
+    if (feedback.weaknesses && feedback.weaknesses.length > 0) {
+        summaryLines.push(`\nAreas for Growth:\n` + feedback.weaknesses.map(w => `• ${w}`).join('\n'));
+    }
+    if (feedback.suggestions && feedback.suggestions.length > 0) {
+        summaryLines.push(`\nAI Suggestions:\n` + feedback.suggestions.map((s, i) => `${i+1}. ${s}`).join('\n'));
+    }
+    const summaryText = summaryLines.join('\n');
+
+    // Add quiz results card in chat
+    const contextDiv = document.createElement('div');
+    contextDiv.className = 'flex items-start gap-3';
+    contextDiv.innerHTML = `
+        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">📊</div>
+        <div class="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-2xl rounded-tl-none px-5 py-4 max-w-sm shadow-sm">
+            <p class="text-indigo-700 text-sm font-bold mb-2">📋 Your Quiz Report</p>
+            <p class="text-gray-700 text-xs whitespace-pre-wrap leading-relaxed font-mono">${escapeHtml(summaryText)}</p>
+        </div>
+    `;
+    container.appendChild(contextDiv);
+    container.scrollTop = container.scrollHeight;
+
+    // Show typing indicator while AI generates personalized welcome
+    setTypingIndicator(true);
+
+    try {
+        // Build rich prompt for Mistral with full quiz data
+        const aiPrompt = `The user just completed a mental health assessment quiz. Here are their full results:\n\n${summaryText}\n\nBased on these results, provide a warm, empathetic, and personalized opening message as Nyxie. Acknowledge their specific score, mood, and at least one strength. Be supportive about the areas for growth. Ask them what they'd like to work on or talk about. Keep the response concise (3-4 sentences max).`;
+
+        const response = await fetch(`${API_BASE}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: currentUser ? currentUser.user_id : null,
+                message: aiPrompt,
+                isJournalingMode: false,
+                skipHistory: true  // Don't save this context prompt to chat history
+            })
+        });
+        const data = await response.json();
+        setTypingIndicator(false);
+
+        let welcomeText = '';
+        if (response.ok && data.ai_response && data.ai_response.text) {
+            welcomeText = data.ai_response.text;
+        } else {
+            // Fallback to local generation if API fails
+            welcomeText = generateMoodBasedResponse(score, feedback);
+        }
+
+        const aiResponseDiv = document.createElement('div');
+        aiResponseDiv.className = 'flex items-start gap-3';
+        aiResponseDiv.innerHTML = `
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">N</div>
+            <div class="bg-indigo-50 border border-indigo-100 rounded-2xl rounded-tl-none px-4 py-3 max-w-sm shadow-sm">
+                <p class="text-gray-800 text-sm">${escapeHtml(welcomeText)}</p>
+            </div>
+        `;
+        container.appendChild(aiResponseDiv);
+        container.scrollTop = container.scrollHeight;
+    } catch (error) {
+        setTypingIndicator(false);
+        console.error('Error getting AI welcome from quiz data:', error);
+        // Show fallback local response
+        const fallbackText = generateMoodBasedResponse(score, feedback);
+        const fallbackDiv = document.createElement('div');
+        fallbackDiv.className = 'flex items-start gap-3';
+        fallbackDiv.innerHTML = `
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">N</div>
+            <div class="bg-indigo-50 border border-indigo-100 rounded-2xl rounded-tl-none px-4 py-3 max-w-sm shadow-sm">
+                <p class="text-gray-800 text-sm">${escapeHtml(fallbackText)}</p>
+            </div>
+        `;
+        container.appendChild(fallbackDiv);
+        container.scrollTop = container.scrollHeight;
+    }
+}
+
+function generateMoodBasedResponse(score, feedback) {
+    let response = '';
+    const mood = (feedback.mood || 'neutral').toLowerCase();
+    const category = (feedback.category || 'general').toLowerCase();
+    
+    // Generate personalized response based on mood and score
+    if (score >= 80) {
+        response = `Great results! 🎉 You're managing well overall. Let's focus on strengthening those areas you mentioned and building resilience in the weak spots.`;
+    } else if (score >= 60) {
+        response = `You're doing okay, and that's a good starting point. I see you have solid strengths to build on. Let's work together to address the areas for growth you identified.`;
+    } else if (score >= 40) {
+        response = `I can see you're facing some challenges right now. The good news is that you've already shown some strengths. Let's focus on one thing at a time to help you feel better.`;
+    } else {
+        response = `I hear that you're going through a tough time. Please know I'm here to listen and support you. Let's start by talking through what's bothering you most.`;
+    }
+    
+    // Add mood-specific tone
+    if (mood === 'anxious' || mood === 'stress') {
+        response += ` 😰 It sounds like anxiety is present. Let's explore some calming strategies together.`;
+    } else if (mood === 'sad' || mood === 'depressed') {
+        response += ` 💙 I sense sadness in your feedback. Remember, these feelings are valid, and we can work through them together.`;
+    } else if (mood === 'happy' || mood === 'positive') {
+        response += ` 😊 It's wonderful to see positive energy! Let's maintain this momentum.`;
+    } else if (mood === 'overwhelmed') {
+        response += ` 🌊 Feeling overwhelmed is completely normal. Let's break things down into manageable steps.`;
+    }
+    
+    response += ` What would you like to talk about first?`;
+    
+    return response;
 }
 
 async function loadChatHistory() {
@@ -1029,9 +1473,8 @@ async function sendMessage() {
     }
 }
 
-async function loadUserVolunteerSecureChat() {
-    const section = document.getElementById('userVolunteerChatSection');
-    if (!section || !currentUser || currentUser.role !== 'user') return;
+async function loadUserVolunteerSecureChat(isPolling = false) {
+    if (!currentUser || currentUser.role !== 'user') return;
 
     try {
         const response = await fetch(`${API_BASE}/secure-chat/user/${currentUser.user_id}`);
@@ -1042,24 +1485,25 @@ async function loadUserVolunteerSecureChat() {
             return;
         }
 
-        if (!response.ok) {
-            section.classList.add('hidden');
-            return;
-        }
-
-        if (!data.connected) {
-            section.classList.add('hidden');
+        if (!response.ok || !data.connected) {
             userAssignedVolunteerId = null;
+            lastUserSecureChatHash = '';
+            checkAndShowVolunteerChatButton();
             return;
         }
 
+        // Volunteer is assigned — update state and show toggle button
         userAssignedVolunteerId = data.volunteer_id;
-        section.classList.remove('hidden');
+        checkAndShowVolunteerChatButton();
 
         const status = document.getElementById('userVolunteerChatStatus');
         if (status) status.textContent = `Connected with ${data.volunteer_name || 'Volunteer'}`;
 
-        renderUserVolunteerSecureMessages(data.messages || []);
+        const nextHash = getSecureChatHash(data.messages || []);
+        if (!isPolling || nextHash !== lastUserSecureChatHash) {
+            renderUserVolunteerSecureMessages(data.messages || []);
+            lastUserSecureChatHash = nextHash;
+        }
     } catch (error) {
         // Silent fail to avoid breaking main AI chat.
     }
@@ -1154,7 +1598,7 @@ async function loadProfile() {
 async function loadVolunteerDashboard() {
     if (!currentUser || currentUser.role !== 'volunteer') return;
 
-    loadCommunityPosts();
+    await loadCommunityPosts();
     renderVolunteerCommunityFeed();
 
     await loadVolunteerHandlingUsers();
@@ -1169,6 +1613,8 @@ async function loadVolunteerDashboard() {
     } catch (error) {
         showToast('Error loading users', 'error');
     }
+
+    startVolunteerSecureChatPolling();
 }
 
 async function loadVolunteerHandlingUsers() {
@@ -1204,24 +1650,102 @@ function renderVolunteerUsersNeedingHelp() {
         const alreadyHandling = handlingIds.has(user.user_id);
         const sourceLabel = user.source === 'user-request' ? 'User Requested Help' : 'High Stress Quiz';
         const requestNote = user.request_note ? `<p class="text-xs text-purple-700 mt-2">Note: ${escapeHtml(user.request_note)}</p>` : '';
+        const displayName = user.name || anonymizeUserLabel(user.user_id);
         return `
             <div class="bg-purple-50 rounded-xl p-4 border border-purple-100">
                 <div class="flex justify-between items-start mb-2">
                     <div>
-                        <p class="text-lg font-semibold text-gray-800">${escapeHtml(user.name)}</p>
-                        <p class="text-sm text-gray-600">User ID: ${user.user_id}</p>
+                        <p class="text-lg font-semibold text-gray-800">${escapeHtml(displayName)}</p>
                     </div>
                     <span class="bg-red-100 text-red-800 px-3 py-1 rounded-full text-xs font-semibold">${escapeHtml(user.stress_level)}</span>
                 </div>
                 <p class="text-sm text-gray-600 mb-3">Last quiz: ${new Date(user.last_quiz_date).toLocaleDateString()}</p>
                 <p class="text-xs inline-block bg-purple-100 text-purple-700 px-2 py-1 rounded-full mb-2">${sourceLabel}</p>
                 ${requestNote}
-                <button ${alreadyHandling ? 'disabled' : ''} onclick="startHandlingUser(${user.user_id})" class="${alreadyHandling ? 'bg-gray-300 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'} text-white px-4 py-2 rounded-lg transition text-sm font-semibold">
-                    ${alreadyHandling ? 'Already Handling' : 'Start Handling'}
-                </button>
+                <div class="flex gap-2 mt-3">
+                    <button onclick="viewVolunteerUserProfile('${user.user_id}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition text-sm font-semibold">View Profile</button>
+                    <button ${alreadyHandling ? 'disabled' : ''} onclick="startHandlingUser('${user.user_id}')" class="${alreadyHandling ? 'bg-gray-300 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'} text-white px-4 py-2 rounded-lg transition text-sm font-semibold">
+                        ${alreadyHandling ? 'Already Handling' : 'Start Handling'}
+                    </button>
+                </div>
             </div>
         `;
     }).join('');
+}
+
+function closeVolunteerUserProfile() {
+    const panel = document.getElementById('volunteerUserProfilePanel');
+    if (panel) panel.classList.add('hidden');
+}
+
+async function viewVolunteerUserProfile(userId) {
+    if (!currentUser || currentUser.role !== 'volunteer') return;
+
+    const panel = document.getElementById('volunteerUserProfilePanel');
+    const header = document.getElementById('volunteerUserProfileHeader');
+    const content = document.getElementById('volunteerUserProfileContent');
+    if (!panel || !header || !content) return;
+
+    panel.classList.remove('hidden');
+    header.textContent = 'User Profile Snapshot';
+    content.innerHTML = '<p class="text-gray-500">Loading profile...</p>';
+
+    try {
+        const response = await fetch(`${API_BASE}/volunteer/user-profile/${currentUser.user_id}/${userId}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+            content.innerHTML = `<p class="text-red-600">${escapeHtml(data.error || 'Unable to load user profile.')}</p>`;
+            return;
+        }
+
+        const user = data.user || {};
+        const request = data.request;
+        const mood = data.mood || {};
+        const quiz = data.quiz || {};
+        const latestQuiz = quiz.latest || null;
+        const displayName = user.name || anonymizeUserLabel(user.user_id || userId);
+
+        const moodCounts = mood.mood_counts || {};
+        const moodSummary = Object.keys(moodCounts).length
+            ? Object.entries(moodCounts).map(([m, c]) => `${m}: ${c}`).join(' | ')
+            : 'No mood entries yet';
+
+        const requestSummary = request
+            ? `Status: ${request.status}${request.requested_at ? ` | Requested: ${formatPostTime(request.requested_at)}` : ''}${request.note ? ` | Note: ${escapeHtml(request.note)}` : ''}`
+            : 'No active volunteer request';
+
+        content.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
+                    <p class="text-xs text-indigo-700 font-semibold mb-1">Identity</p>
+                    <p class="text-gray-800 font-bold">${escapeHtml(displayName)}</p>
+                    <p class="text-sm text-gray-600">Role: ${escapeHtml(user.role || 'user')}</p>
+                </div>
+                <div class="bg-purple-50 rounded-xl p-4 border border-purple-100">
+                    <p class="text-xs text-purple-700 font-semibold mb-1">Volunteer Request</p>
+                    <p class="text-sm text-gray-700">${requestSummary}</p>
+                </div>
+                <div class="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
+                    <p class="text-xs text-emerald-700 font-semibold mb-1">Mood Snapshot</p>
+                    <p class="text-gray-800">Current: ${(mood.current_mood && mood.current_mood.mood) ? escapeHtml(mood.current_mood.mood) : 'neutral'}</p>
+                    <p class="text-sm text-gray-600">Total moods: ${mood.total_moods || 0}</p>
+                    <p class="text-sm text-gray-600">${escapeHtml(moodSummary)}</p>
+                </div>
+                <div class="bg-amber-50 rounded-xl p-4 border border-amber-100">
+                    <p class="text-xs text-amber-700 font-semibold mb-1">Latest Quiz</p>
+                    ${latestQuiz
+                        ? `<p class="text-sm text-gray-700">Stress: ${escapeHtml(latestQuiz.stress_level || 'Unknown')}</p>
+                           <p class="text-sm text-gray-700">Score: ${escapeHtml(String(latestQuiz.score ?? '-'))}</p>
+                           <p class="text-sm text-gray-600">${escapeHtml(latestQuiz.recommendation || '')}</p>`
+                        : '<p class="text-sm text-gray-600">No quiz data yet</p>'
+                    }
+                </div>
+            </div>
+        `;
+    } catch (error) {
+        content.innerHTML = '<p class="text-red-600">Error loading user profile.</p>';
+    }
 }
 
 async function startHandlingUser(userId) {
@@ -1285,12 +1809,12 @@ function renderVolunteerHandlingList() {
             <div class="flex items-center justify-between gap-4">
                 <div>
                     <p class="font-semibold text-gray-800">${escapeHtml(user.name)}</p>
-                    <p class="text-xs text-gray-600">User ID: ${user.user_id} | ${escapeHtml(user.stress_level)}</p>
+                    <p class="text-xs text-gray-600">${escapeHtml(user.stress_level)}</p>
                     <p class="text-xs text-gray-500 mt-1">Assigned: ${formatPostTime(user.assigned_at)}</p>
                 </div>
                 <div class="flex gap-2">
-                    <button onclick="openVolunteerSecureChat(${user.user_id})" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-xs font-semibold">Secure Chat</button>
-                    <button onclick="stopHandlingUser(${user.user_id})" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-2 rounded-lg text-xs font-semibold">Release</button>
+                    <button onclick="openVolunteerSecureChat('${user.user_id}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-xs font-semibold">Secure Chat</button>
+                    <button onclick="stopHandlingUser('${user.user_id}')" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-2 rounded-lg text-xs font-semibold">Release</button>
                 </div>
             </div>
         </div>
@@ -1310,6 +1834,7 @@ function resetVolunteerSecureChatPanel() {
         input.disabled = true;
     }
     if (sendBtn) sendBtn.disabled = true;
+    lastVolunteerSecureChatHash = '';
 }
 
 function renderVolunteerSecureMessages(messages) {
@@ -1336,29 +1861,45 @@ function renderVolunteerSecureMessages(messages) {
     list.scrollTop = list.scrollHeight;
 }
 
+async function fetchVolunteerSecureChatMessages(userId, isPolling = false) {
+    try {
+        const response = await fetch(`${API_BASE}/secure-chat/volunteer/${currentUser.user_id}/${userId}`);
+        const data = await response.json();
+        if (!response.ok) {
+            if (!isPolling) {
+                showToast(data.error || 'Unable to load secure chat.', 'error');
+            }
+            return false;
+        }
+
+        const nextHash = getSecureChatHash(data.messages || []);
+        if (!isPolling || nextHash !== lastVolunteerSecureChatHash) {
+            renderVolunteerSecureMessages(data.messages || []);
+            lastVolunteerSecureChatHash = nextHash;
+        }
+        return true;
+    } catch (error) {
+        if (!isPolling) {
+            showToast('Unable to load secure chat.', 'error');
+        }
+        return false;
+    }
+}
+
 async function openVolunteerSecureChat(userId) {
     if (!currentUser || currentUser.role !== 'volunteer') return;
     selectedVolunteerSecureUserId = userId;
+    lastVolunteerSecureChatHash = '';
 
     const header = document.getElementById('volunteerSecureChatHeader');
     const input = document.getElementById('volunteerSecureChatInput');
     const sendBtn = document.getElementById('volunteerSecureChatSendBtn');
     const user = volunteerHandlingUsers.find(u => u.user_id === userId);
-    if (header) header.textContent = user ? `Secure chat with ${user.name} (User ID: ${user.user_id})` : `Secure chat with user ${userId}`;
+    if (header) header.textContent = user ? `Secure chat with ${user.name}` : 'Secure chat with assigned user';
     if (input) input.disabled = false;
     if (sendBtn) sendBtn.disabled = false;
 
-    try {
-        const response = await fetch(`${API_BASE}/secure-chat/volunteer/${currentUser.user_id}/${userId}`);
-        const data = await response.json();
-        if (!response.ok) {
-            showToast(data.error || 'Unable to load secure chat.', 'error');
-            return;
-        }
-        renderVolunteerSecureMessages(data.messages || []);
-    } catch (error) {
-        showToast('Unable to load secure chat.', 'error');
-    }
+    await fetchVolunteerSecureChatMessages(userId, false);
 }
 
 async function sendVolunteerSecureMessage() {
@@ -1388,7 +1929,7 @@ async function sendVolunteerSecureMessage() {
     }
 }
 
-function submitVolunteerPost() {
+async function submitVolunteerPost() {
     const input = document.getElementById('volunteerPostInput');
     if (!input || !currentUser) return;
 
@@ -1398,27 +1939,33 @@ function submitVolunteerPost() {
         return;
     }
 
-    const post = {
-        id: Date.now(),
-        userId: currentUser.user_id,
-        petName: `Guide ${getCurrentPetName()}`,
-        text,
-        timestamp: new Date().toISOString(),
-        comments: []
-    };
+    try {
+        const response = await fetch(`${API_BASE}/feed/posts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.user_id, caption: text })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            showToast(data.error || 'Unable to publish post.', 'error');
+            return;
+        }
+    } catch (error) {
+        showToast('Unable to publish post.', 'error');
+        return;
+    }
 
-    communityPosts.unshift(post);
-    saveCommunityPosts();
     input.value = '';
 
     const counter = document.getElementById('volunteerPostCharCount');
     if (counter) counter.textContent = '0 / 280';
 
+    await loadCommunityPosts();
     renderVolunteerCommunityFeed();
     showToast('Volunteer post published.', 'success');
 }
 
-function volunteerReplyToPost(postId) {
+async function volunteerReplyToPost(postId) {
     const input = document.getElementById(`volunteerReplyInput-${postId}`);
     if (!input || !currentUser) return;
 
@@ -1428,19 +1975,24 @@ function volunteerReplyToPost(postId) {
         return;
     }
 
-    const post = communityPosts.find(p => p.id === postId);
-    if (!post) return;
+    try {
+        const response = await fetch(`${API_BASE}/feed/posts/${postId}/comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.user_id, comment: text })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            showToast(data.error || 'Unable to send reply.', 'error');
+            return;
+        }
+    } catch (error) {
+        showToast('Unable to send reply.', 'error');
+        return;
+    }
 
-    post.comments.push({
-        id: Date.now(),
-        userId: currentUser.user_id,
-        petName: `Guide ${getCurrentPetName()}`,
-        text,
-        timestamp: new Date().toISOString()
-    });
-
-    saveCommunityPosts();
     input.value = '';
+    await loadCommunityPosts();
     renderVolunteerCommunityFeed();
 }
 
@@ -1472,7 +2024,7 @@ function renderVolunteerCommunityFeed() {
                 <div class="space-y-2 mb-3">${comments}</div>
                 <div class="flex gap-2">
                     <input id="volunteerReplyInput-${post.id}" type="text" maxlength="180" placeholder="Reply as volunteer..." class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-purple-600" />
-                    <button onclick="volunteerReplyToPost(${post.id})" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm">Reply</button>
+                    <button onclick="volunteerReplyToPost('${post.id}')" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm">Reply</button>
                 </div>
             </div>
         `;
@@ -1742,6 +2294,19 @@ function deleteJournalEntry(id) {
 const originalNavigateTo = navigateTo;
 navigateTo = function(page) {
     originalNavigateTo(page);
+
+    if (page === 'messaging' && currentUser && currentUser.role === 'user') {
+        startUserSecureChatPolling();
+    } else {
+        stopUserSecureChatPolling();
+    }
+
+    if (page === 'volunteer-dashboard' && currentUser && currentUser.role === 'volunteer') {
+        startVolunteerSecureChatPolling();
+    } else {
+        stopVolunteerSecureChatPolling();
+    }
+
     if (page === 'journal') {
         initJournal();
     } else if (page === 'breathing') {
