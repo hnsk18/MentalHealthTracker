@@ -23,6 +23,13 @@ const quiz_responses_db = {};
 const messages_db = {};
 let next_user_id = 1;
 
+// === Volunteer Feature Databases ===
+const volunteer_assignments = {};  // volunteer_id -> [assigned_user_ids]
+const session_notes = {};          // user_id -> { volunteer_id, notes, timestamp }
+const reminders = {};              // reminder_id -> { volunteer_id, user_id, timestamp, status }
+const user_transfers = {};         // user_id -> { from_volunteer_id, to_volunteer_id, reason, transfer_cooldown_until }
+let next_reminder_id = 1;
+
 // Mock data
 const QUIZ_QUESTIONS = [
     {
@@ -571,6 +578,241 @@ DO NOT output markdown formatting blocks like \`\`\`json. Output ONLY raw JSON t
             }
         });
     }
+});
+
+
+// ==================== Volunteer Dashboard Routes ====================
+
+// Initialize volunteer assignments (mock data: assign volunteers to users)
+function initializeVolunteerAssignments() {
+    // Assign high-stress users to volunteers if not already assigned
+    for (const [uid, quizzes] of Object.entries(quiz_responses_db)) {
+        if (quizzes.length > 0) {
+            const latest_quiz = quizzes[quizzes.length - 1];
+            if (latest_quiz.stress_level === 'High') {
+                const volunteer_id = (parseInt(uid) % 3) + 100; // Simulate 3 volunteers (IDs 100, 101, 102)
+                if (!volunteer_assignments[volunteer_id]) {
+                    volunteer_assignments[volunteer_id] = [];
+                }
+                if (!volunteer_assignments[volunteer_id].includes(parseInt(uid))) {
+                    volunteer_assignments[volunteer_id].push(parseInt(uid));
+                }
+            }
+        }
+    }
+}
+
+// GET assigned users for a volunteer
+app.get('/api/volunteer/assigned-users/:volunteer_id', (req, res) => {
+    const volunteer_id = parseInt(req.params.volunteer_id);
+    
+    initializeVolunteerAssignments();
+    const assigned_user_ids = volunteer_assignments[volunteer_id] || [];
+    
+    const assigned_users = assigned_user_ids.map(uid => {
+        const user = users_db[uid] || {};
+        const moods = moods_db[uid] || [];
+        const current_mood = moods.length > 0 ? moods[moods.length - 1] : { mood: 'neutral', emoji: '😐' };
+        const quizzes = quiz_responses_db[uid] || [];
+        const stress_level = quizzes.length > 0 ? quizzes[quizzes.length - 1].stress_level : 'Unknown';
+        
+        return {
+            user_id: uid,
+            anonymous_id: `USER_${String(uid).padStart(5, '0')}`,
+            name: user.name || 'Unknown',
+            current_mood: current_mood.mood,
+            mood_emoji: current_mood.emoji,
+            risk_level: stress_level,
+            last_active: moods.length > 0 ? moods[moods.length - 1].timestamp : 'Never',
+            mood_history: moods.slice(-7),
+            total_moods: moods.length
+        };
+    });
+    
+    res.status(200).json({ assigned_users });
+});
+
+// GET user details for volunteer (7-day mood trend, tags, chat preview)
+app.get('/api/volunteer/user/:user_id/details/:volunteer_id', (req, res) => {
+    const user_id = parseInt(req.params.user_id);
+    const volunteer_id = parseInt(req.params.volunteer_id);
+    
+    if (!users_db[user_id]) {
+        return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Verify volunteer has access to this user
+    initializeVolunteerAssignments();
+    const assigned_users = volunteer_assignments[volunteer_id] || [];
+    if (!assigned_users.includes(user_id)) {
+        return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    const user = users_db[user_id];
+    const moods = moods_db[user_id] || [];
+    const messages = messages_db[user_id] || [];
+    const quizzes = quiz_responses_db[user_id] || [];
+    const notes = session_notes[user_id] || {};
+    
+    // Extract tags based on mood history
+    const mood_counts = {};
+    moods.forEach(m => {
+        mood_counts[m.mood] = (mood_counts[m.mood] || 0) + 1;
+    });
+    
+    const tags = Object.entries(mood_counts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([mood]) => mood);
+    
+    res.status(200).json({
+        user_id,
+        anonymous_id: `USER_${String(user_id).padStart(5, '0')}`,
+        name: user.name,
+        mood_trend_7days: moods.slice(-7),
+        chat_preview: messages.slice(-5),
+        tags,
+        risk_level: quizzes.length > 0 ? quizzes[quizzes.length - 1].stress_level : 'Unknown',
+        total_interactions: messages.length,
+        session_notes: notes.notes || '',
+        notes_timestamp: notes.timestamp || null
+    });
+});
+
+// POST session notes from volunteer
+app.post('/api/volunteer/session-notes', (req, res) => {
+    const { user_id, volunteer_id, notes } = req.body;
+    
+    if (!users_db[user_id]) {
+        return res.status(404).json({ error: 'User not found' });
+    }
+    
+    session_notes[user_id] = {
+        volunteer_id,
+        notes,
+        timestamp: new Date().toISOString()
+    };
+    
+    res.status(201).json({
+        success: true,
+        message: 'Session notes saved',
+        data: session_notes[user_id]
+    });
+});
+
+// POST schedule check-in reminder
+app.post('/api/volunteer/reminder', (req, res) => {
+    const { volunteer_id, user_id, reminder_time } = req.body;
+    
+    if (!users_db[user_id]) {
+        return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const reminder_id = next_reminder_id++;
+    const reminder = {
+        reminder_id,
+        volunteer_id,
+        user_id,
+        scheduled_time: reminder_time,
+        created_at: new Date().toISOString(),
+        status: 'scheduled'
+    };
+    
+    reminders[reminder_id] = reminder;
+    
+    res.status(201).json({
+        success: true,
+        message: 'Reminder scheduled',
+        reminder
+    });
+});
+
+// POST transfer user to another volunteer
+app.post('/api/volunteer/transfer-user', (req, res) => {
+    const { user_id, from_volunteer_id, to_volunteer_id, reason } = req.body;
+    
+    if (!users_db[user_id]) {
+        return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Check cooldown (7 days)
+    const transfer_history = user_transfers[user_id];
+    if (transfer_history) {
+        const cooldown_until = new Date(transfer_history.transfer_cooldown_until);
+        if (new Date() < cooldown_until) {
+            return res.status(400).json({
+                error: 'Transfer cooldown active',
+                retry_after: cooldown_until.toISOString()
+            });
+        }
+    }
+    
+    // Remove from old volunteer's list
+    if (volunteer_assignments[from_volunteer_id]) {
+        volunteer_assignments[from_volunteer_id] = volunteer_assignments[from_volunteer_id].filter(id => id !== user_id);
+    }
+    
+    // Add to new volunteer's list
+    if (!volunteer_assignments[to_volunteer_id]) {
+        volunteer_assignments[to_volunteer_id] = [];
+    }
+    volunteer_assignments[to_volunteer_id].push(user_id);
+    
+    // Record transfer with cooldown
+    const cooldown_date = new Date();
+    cooldown_date.setDate(cooldown_date.getDate() + 7);
+    
+    user_transfers[user_id] = {
+        from_volunteer_id,
+        to_volunteer_id,
+        reason,
+        timestamp: new Date().toISOString(),
+        transfer_cooldown_until: cooldown_date.toISOString()
+    };
+    
+    res.status(200).json({
+        success: true,
+        message: 'User transferred successfully',
+        transfer: user_transfers[user_id]
+    });
+});
+
+// GET volunteer analytics (sessions per week, mood trends)
+app.get('/api/volunteer/analytics/:volunteer_id', (req, res) => {
+    const volunteer_id = parseInt(req.params.volunteer_id);
+    
+    initializeVolunteerAssignments();
+    const assigned_user_ids = volunteer_assignments[volunteer_id] || [];
+    
+    // Calculate sessions per week
+    const sessions_by_week = {};
+    const mood_trends = {};
+    let total_sessions = 0;
+    
+    assigned_user_ids.forEach(uid => {
+        const messages = messages_db[uid] || [];
+        total_sessions += messages.length;
+        
+        messages.forEach(msg => {
+            const date = new Date(msg.timestamp);
+            const week_key = `Week ${Math.ceil(date.getDate() / 7)}`;
+            sessions_by_week[week_key] = (sessions_by_week[week_key] || 0) + 1;
+        });
+        
+        const moods = moods_db[uid] || [];
+        moods.forEach(mood => {
+            mood_trends[mood.mood] = (mood_trends[mood.mood] || 0) + 1;
+        });
+    });
+    
+    res.status(200).json({
+        volunteer_id,
+        assigned_users_count: assigned_user_ids.length,
+        total_sessions,
+        sessions_per_week: sessions_by_week,
+        mood_trends,
+        average_response_time_minutes: Math.floor(Math.random() * 30) + 5 // Mock data
+    });
 });
 
 
