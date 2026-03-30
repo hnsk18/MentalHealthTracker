@@ -1619,9 +1619,13 @@ app.get('/api/health', (req, res) => {
   return res.status(200).json({ status: 'OK', message: 'Sevak + Nyxie AI Backend running' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Sevak backend running on http://localhost:${PORT}`);
-  if (!process.env.MISTRAL_API_KEY) {
-    console.warn('MISTRAL_API_KEY not set - AI chat will use fallback responses');
-  }
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Sevak backend running on http://localhost:${PORT}`);
+    if (!process.env.MISTRAL_API_KEY) {
+      console.warn('MISTRAL_API_KEY not set - AI chat will use fallback responses');
+    }
+  });
+}
+
+module.exports = app;
