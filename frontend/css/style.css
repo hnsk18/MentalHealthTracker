@@ -455,3 +455,57 @@ textarea {
     animation: fadeInUp 0.5s ease forwards;
 }
 
+/* ==================== Feedback Modal ==================== */
+
+.feedback-star {
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    user-select: none;
+}
+
+.feedback-star:hover {
+    transform: scale(1.3);
+    filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.5));
+}
+
+.feedback-star.text-yellow-400 {
+    filter: drop-shadow(0 0 4px rgba(250, 204, 21, 0.3));
+}
+
+/* ==================== Approval Status Badges ==================== */
+
+.approval-badge-pending {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    color: #92400e;
+    border: 1px solid #f59e0b40;
+    animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.approval-badge-approved {
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    color: #065f46;
+    border: 1px solid #10b98140;
+}
+
+.approval-badge-rejected {
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    color: #991b1b;
+    border: 1px solid #ef444440;
+}
+
+/* ==================== Admin Tab Improvements ==================== */
+
+.admin-tab-btn {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.admin-tab-btn:hover {
+    transform: translateY(-2px);
+}
+
+/* ==================== Volunteer Registration Fields ==================== */
+
+#volunteerRegFields {
+    transition: all 0.3s ease;
+}
+

@@ -320,7 +320,14 @@ async function handleLogin(e) {
             else { navigateTo('dashboard'); loadCommunityHome(); }
             showToast('Login successful!', 'success');
         } else {
-            showToast(data.error || 'Login failed', 'error');
+            // Handle approval-specific errors
+            if (data.code === 'PENDING_APPROVAL') {
+                showToast('⏳ Your volunteer account is pending admin approval. Please check back later.', 'info');
+            } else if (data.code === 'REJECTED') {
+                showToast('❌ Your volunteer application has been rejected. Contact support.', 'error');
+            } else {
+                showToast(data.error || 'Login failed', 'error');
+            }
         }
     } catch (error) {
         console.error('Login error:', error);
@@ -334,15 +341,28 @@ async function handleRegister(e) {
     const email = document.getElementById('registerEmail').value;
     const password = document.getElementById('registerPassword').value;
     const role = document.getElementById('registerRole').value;
+    const is_licensed = document.getElementById('registerLicensed')?.checked || false;
+    const expertise = document.getElementById('registerExpertise')?.value || '';
+
     try {
+        const body = { name, email, password, role };
+        if (role === 'volunteer') {
+            body.is_licensed = is_licensed;
+            body.expertise = expertise;
+        }
+
         const response = await fetch(`${API_BASE}/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, email, password, role })
+            body: JSON.stringify(body)
         });
         const data = await response.json();
         if (response.ok) {
-            showToast('Registration successful! Please login.', 'success');
+            if (data.approval_status === 'pending') {
+                showToast('Registration successful! Your account is pending admin approval.', 'info');
+            } else {
+                showToast('Registration successful! Please login.', 'success');
+            }
             navigateTo('login');
             document.getElementById('loginEmail').value = email;
         } else {
@@ -351,6 +371,17 @@ async function handleRegister(e) {
     } catch (error) {
         console.error('Register error:', error);
         showToast('Error connecting to server', 'error');
+    }
+}
+
+function toggleVolunteerFields() {
+    const role = document.getElementById('registerRole')?.value;
+    const fields = document.getElementById('volunteerRegFields');
+    if (!fields) return;
+    if (role === 'volunteer') {
+        fields.classList.remove('hidden');
+    } else {
+        fields.classList.add('hidden');
     }
 }
 
@@ -610,6 +641,9 @@ async function loadCommunityHome() {
     await loadCommunityPosts();
     renderCommunityFeed();
     syncVolunteerRequestStatus();
+
+    // Check for pending feedback after volunteer release
+    checkPendingFeedback();
 }
 
 async function submitFeelingPost() {
@@ -1177,6 +1211,9 @@ async function initChatSection() {
         await loadUserVolunteerSecureChat();
         checkAndShowVolunteerChatButton();
         startUserSecureChatPolling();
+
+        // Check for pending feedback
+        checkPendingFeedback();
     }
 }
 
@@ -2248,7 +2285,7 @@ let adminSSESource = null;
 let adminNotifications = [];
 
 function switchAdminTab(tab) {
-    ['analytics', 'volunteers', 'rankings'].forEach(t => {
+    ['analytics', 'users', 'approvals', 'volunteers', 'rankings'].forEach(t => {
         const content = document.getElementById('adminTabContent-' + t);
         const btn = document.getElementById('adminTab-' + t);
         if (content) content.classList.toggle('hidden', t !== tab);
@@ -2262,6 +2299,8 @@ function switchAdminTab(tab) {
             }
         }
     });
+    if (tab === 'users') loadAdminUsers();
+    if (tab === 'approvals') loadPendingVolunteers();
     if (tab === 'volunteers') loadAdminVolunteers();
     if (tab === 'rankings') loadVolunteerRankings();
 }
@@ -2473,6 +2512,7 @@ async function loadVolunteerRankings() {
                         <th class="px-4 py-3 text-center">Students</th>
                         <th class="px-4 py-3 text-center">👍 Positive</th>
                         <th class="px-4 py-3 text-center">👎 Negative</th>
+                        <th class="px-4 py-3 text-center">⭐ Feedback</th>
                         <th class="px-4 py-3 text-center">Score</th>
                         <th class="px-4 py-3 text-center rounded-r-lg">Rating</th>
                     </tr>
@@ -2482,12 +2522,16 @@ async function loadVolunteerRankings() {
                         const icon = rankIcons[i] || `#${i + 1}`;
                         const scoreDisplay = r.score !== null ? r.score + '%' : '—';
                         const badgeCls = badgeColors[r.badge] || badgeColors.grey;
+                        const feedbackDisplay = r.feedback_avg_rating !== null
+                            ? `<span class="text-yellow-500">${'★'.repeat(Math.round(r.feedback_avg_rating))}${'☆'.repeat(5 - Math.round(r.feedback_avg_rating))}</span> <span class="text-xs text-gray-500">(${r.feedback_count})</span>`
+                            : '<span class="text-gray-400">—</span>';
                         return `<tr class="hover:bg-gray-50 transition-colors">
                             <td class="px-4 py-3 text-xl">${icon}</td>
                             <td class="px-4 py-3 font-semibold text-gray-800">🤝 ${r.name || 'Unknown'}</td>
                             <td class="px-4 py-3 text-center text-gray-600">${r.students_helped}</td>
                             <td class="px-4 py-3 text-center text-green-600 font-semibold">${r.positive_impacts}</td>
                             <td class="px-4 py-3 text-center text-red-500 font-semibold">${r.negative_impacts}</td>
+                            <td class="px-4 py-3 text-center">${feedbackDisplay}</td>
                             <td class="px-4 py-3 text-center font-bold text-gray-800">${scoreDisplay}</td>
                             <td class="px-4 py-3 text-center"><span class="px-3 py-1 rounded-full text-xs font-bold ${badgeCls}">${r.label}</span></td>
                         </tr>`;
@@ -2497,6 +2541,254 @@ async function loadVolunteerRankings() {
         </div>`;
     } catch (err) {
         container.innerHTML = '<p class="text-red-500 p-4">Error loading rankings.</p>';
+    }
+}
+
+// ==================== Admin: User Management ====================
+
+async function loadAdminUsers() {
+    const container = document.getElementById('adminUsersList');
+    if (!container) return;
+    container.innerHTML = '<p class="text-gray-400 text-center py-8">Loading...</p>';
+    try {
+        const res = await fetch(`${API_BASE}/admin/users`);
+        const data = await res.json();
+        if (!res.ok) { container.innerHTML = `<p class="text-red-500 p-4">${data.error}</p>`; return; }
+        const users = data.users || [];
+        if (users.length === 0) {
+            container.innerHTML = '<p class="text-gray-400 text-center py-8">No users found.</p>';
+            return;
+        }
+        const roleIcons = { user: '👤', volunteer: '🤝', admin: '⚙️' };
+        const statusColors = {
+            approved: 'bg-green-100 text-green-700',
+            pending: 'bg-yellow-100 text-yellow-700',
+            rejected: 'bg-red-100 text-red-700'
+        };
+        container.innerHTML = `
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="bg-gray-50 text-gray-500 uppercase text-xs">
+                        <th class="px-4 py-3 text-left rounded-l-lg">#</th>
+                        <th class="px-4 py-3 text-left">Name</th>
+                        <th class="px-4 py-3 text-left">Role</th>
+                        <th class="px-4 py-3 text-center">Status</th>
+                        <th class="px-4 py-3 text-center">Licensed</th>
+                        <th class="px-4 py-3 text-left">Expertise</th>
+                        <th class="px-4 py-3 text-right rounded-r-lg">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    ${users.map((u, i) => {
+                        const icon = roleIcons[u.role] || '👤';
+                        const statusCls = statusColors[u.approval_status] || statusColors.approved;
+                        const statusLabel = (u.approval_status || 'approved').charAt(0).toUpperCase() + (u.approval_status || 'approved').slice(1);
+                        return `<tr class="hover:bg-gray-50 transition-colors">
+                            <td class="px-4 py-3 text-gray-400">${i + 1}</td>
+                            <td class="px-4 py-3 font-semibold text-gray-800">${icon} ${escapeHtml(u.dummy_name || 'Unnamed')}</td>
+                            <td class="px-4 py-3 text-gray-600 capitalize">${escapeHtml(u.role)}</td>
+                            <td class="px-4 py-3 text-center"><span class="px-2 py-1 rounded-full text-xs font-bold ${statusCls}">${statusLabel}</span></td>
+                            <td class="px-4 py-3 text-center">${u.role === 'volunteer' ? (u.is_licensed ? '✅' : '❌') : '—'}</td>
+                            <td class="px-4 py-3 text-gray-600 text-xs">${u.role === 'volunteer' && u.expertise ? escapeHtml(u.expertise) : '—'}</td>
+                            <td class="px-4 py-3 text-right">
+                                ${u.role !== 'admin' ? `<button onclick="adminDeleteUser('${u.id}', '${escapeHtml(u.dummy_name)}')" class="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1 rounded-lg text-xs font-semibold transition-all">🗑 Delete</button>` : '<span class="text-gray-400 text-xs">Protected</span>'}
+                            </td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>`;
+    } catch (err) {
+        container.innerHTML = '<p class="text-red-500 p-4">Error loading users.</p>';
+    }
+}
+
+async function adminDeleteUser(userId, name) {
+    if (!confirm(`Delete user "${name}"? This action cannot be undone.`)) return;
+    try {
+        const res = await fetch(`${API_BASE}/admin/users/${userId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`User ${name} deleted.`, 'success');
+            loadAdminUsers();
+        } else {
+            showToast(data.error || 'Failed to delete user.', 'error');
+        }
+    } catch (err) {
+        showToast('Error deleting user.', 'error');
+    }
+}
+
+// ==================== Admin: Pending Volunteer Approvals ====================
+
+async function loadPendingVolunteers() {
+    const container = document.getElementById('adminPendingList');
+    if (!container) return;
+    container.innerHTML = '<p class="text-gray-400 text-center py-8">Loading...</p>';
+    try {
+        const res = await fetch(`${API_BASE}/admin/pending-volunteers`);
+        const data = await res.json();
+        if (!res.ok) { container.innerHTML = `<p class="text-red-500 p-4">${data.error}</p>`; return; }
+        const volunteers = data.volunteers || [];
+        if (volunteers.length === 0) {
+            container.innerHTML = '<p class="text-gray-400 text-center py-8">🎉 No pending volunteer applications.</p>';
+            return;
+        }
+        container.innerHTML = volunteers.map(v => {
+            const licenseBadge = v.is_licensed
+                ? '<span class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">✅ Licensed Professional</span>'
+                : '<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-semibold">📝 Not Licensed</span>';
+            const expertiseStr = v.expertise ? escapeHtml(v.expertise) : 'No expertise specified';
+            const createdAt = v.created_at ? formatPostTime(v.created_at) : 'Unknown';
+            return `
+                <div class="border-2 border-yellow-200 bg-yellow-50 rounded-2xl p-6 mb-4 transition-all hover:shadow-md">
+                    <div class="flex items-start justify-between gap-4">
+                        <div class="flex-1">
+                            <h4 class="text-lg font-bold text-gray-800 mb-1">🤝 ${escapeHtml(v.dummy_name || 'Unnamed')}</h4>
+                            <p class="text-sm text-gray-600 mb-2">Applied: ${createdAt}</p>
+                            <div class="flex flex-wrap gap-2 mb-3">
+                                ${licenseBadge}
+                                <span class="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-semibold">🎯 ${expertiseStr}</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <button onclick="adminApproveVolunteer('${v.id}', '${escapeHtml(v.dummy_name)}')" class="bg-green-500 hover:bg-green-600 text-white px-5 py-2 rounded-xl text-sm font-bold transition-all transform hover:scale-105 shadow-sm">✅ Approve</button>
+                            <button onclick="adminRejectVolunteer('${v.id}', '${escapeHtml(v.dummy_name)}')" class="bg-red-500 hover:bg-red-600 text-white px-5 py-2 rounded-xl text-sm font-bold transition-all transform hover:scale-105 shadow-sm">❌ Reject</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (err) {
+        container.innerHTML = '<p class="text-red-500 p-4">Error loading pending volunteers.</p>';
+    }
+}
+
+async function adminApproveVolunteer(volunteerId, name) {
+    if (!confirm(`Approve volunteer "${name}"? They will be able to access the platform.`)) return;
+    try {
+        const res = await fetch(`${API_BASE}/admin/volunteers/${volunteerId}/approve`, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`✅ Volunteer ${name} approved!`, 'success');
+            loadPendingVolunteers();
+            loadAdminVolunteers();
+        } else {
+            showToast(data.error || 'Failed to approve volunteer.', 'error');
+        }
+    } catch (err) {
+        showToast('Error approving volunteer.', 'error');
+    }
+}
+
+async function adminRejectVolunteer(volunteerId, name) {
+    if (!confirm(`Reject volunteer "${name}"? They will not be able to access the platform.`)) return;
+    try {
+        const res = await fetch(`${API_BASE}/admin/volunteers/${volunteerId}/reject`, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`❌ Volunteer ${name} rejected.`, 'success');
+            loadPendingVolunteers();
+        } else {
+            showToast(data.error || 'Failed to reject volunteer.', 'error');
+        }
+    } catch (err) {
+        showToast('Error rejecting volunteer.', 'error');
+    }
+}
+
+// ==================== Student Feedback System ====================
+
+let pendingFeedbackVolunteerId = null;
+let currentFeedbackRating = 0;
+
+async function checkPendingFeedback() {
+    if (!currentUser || currentUser.role !== 'user') return;
+    try {
+        const res = await fetch(`${API_BASE}/feedback/pending/${currentUser.user_id}`);
+        const data = await res.json();
+        if (res.ok && data.has_pending) {
+            pendingFeedbackVolunteerId = data.volunteer_id;
+            const nameEl = document.getElementById('feedbackVolunteerName');
+            if (nameEl) nameEl.textContent = `Rate your session with ${data.volunteer_name || 'your volunteer'}`;
+            openFeedbackModal();
+        }
+    } catch (err) {
+        // Silent — don't block user experience
+    }
+}
+
+function openFeedbackModal() {
+    const modal = document.getElementById('feedbackModal');
+    if (modal) modal.classList.remove('hidden');
+    // Reset state
+    currentFeedbackRating = 0;
+    const stars = document.querySelectorAll('.feedback-star');
+    stars.forEach(s => s.classList.replace('text-yellow-400', 'text-gray-300'));
+    const textarea = document.getElementById('feedbackText');
+    if (textarea) textarea.value = '';
+    const btn = document.getElementById('feedbackSubmitBtn');
+    if (btn) btn.disabled = true;
+    const label = document.getElementById('feedbackRatingLabel');
+    if (label) label.textContent = 'Tap a star to rate';
+}
+
+function closeFeedbackModal() {
+    const modal = document.getElementById('feedbackModal');
+    if (modal) modal.classList.add('hidden');
+    pendingFeedbackVolunteerId = null;
+    currentFeedbackRating = 0;
+}
+
+function setFeedbackRating(rating) {
+    currentFeedbackRating = rating;
+    const stars = document.querySelectorAll('.feedback-star');
+    const labels = ['', 'Poor 😞', 'Below Average 😐', 'Average 🙂', 'Good 😊', 'Excellent 🤩'];
+    stars.forEach(s => {
+        const starNum = parseInt(s.getAttribute('data-star'));
+        if (starNum <= rating) {
+            s.classList.remove('text-gray-300');
+            s.classList.add('text-yellow-400');
+        } else {
+            s.classList.remove('text-yellow-400');
+            s.classList.add('text-gray-300');
+        }
+    });
+    const label = document.getElementById('feedbackRatingLabel');
+    if (label) label.textContent = labels[rating] || '';
+    const btn = document.getElementById('feedbackSubmitBtn');
+    if (btn) btn.disabled = false;
+}
+
+async function submitFeedback() {
+    if (!currentUser || !pendingFeedbackVolunteerId || currentFeedbackRating < 1) return;
+    const feedbackText = document.getElementById('feedbackText')?.value || '';
+    const btn = document.getElementById('feedbackSubmitBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting...'; }
+
+    try {
+        const res = await fetch(`${API_BASE}/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: currentUser.user_id,
+                volunteer_id: pendingFeedbackVolunteerId,
+                rating: currentFeedbackRating,
+                feedback_text: feedbackText
+            })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('Thank you for your feedback! ⭐', 'success');
+            closeFeedbackModal();
+        } else {
+            showToast(data.error || 'Failed to submit feedback.', 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Submit Feedback'; }
+        }
+    } catch (err) {
+        showToast('Error submitting feedback.', 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Submit Feedback'; }
     }
 }
 

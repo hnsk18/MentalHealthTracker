@@ -380,7 +380,12 @@ async function requireUserWithRole(userId, role) {
 
 app.post('/api/register', async (req, res) => {
   try {
-    const { email, password, name, role = 'user' } = req.body;
+    const { email, password, name, role = 'user', is_licensed = false, expertise = '' } = req.body;
+
+    // Admin accounts can only be created via direct SQL by the DBMS manager
+    if (role === 'admin') {
+      return res.status(403).json({ error: 'Admin accounts cannot be registered through the application. Contact the database administrator.' });
+    }
 
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
@@ -394,13 +399,23 @@ app.post('/api/register', async (req, res) => {
 
     const userId = authData.user.id;
 
-    const { error: insertError } = await supabase.from('users').insert([
-      {
-        id: userId,
-        dummy_name: name,
-        role
-      }
-    ]);
+    // Volunteers start with 'pending' approval; users are auto-approved
+    const approval_status = role === 'volunteer' ? 'pending' : 'approved';
+
+    const userRow = {
+      id: userId,
+      dummy_name: name,
+      role,
+      approval_status
+    };
+
+    // Add volunteer-specific fields
+    if (role === 'volunteer') {
+      userRow.is_licensed = !!is_licensed;
+      userRow.expertise = `${expertise}`.trim().slice(0, 500);
+    }
+
+    const { error: insertError } = await supabase.from('users').insert([userRow]);
 
     if (insertError) {
       return res.status(400).json({ error: insertError.message });
@@ -416,10 +431,15 @@ app.post('/api/register', async (req, res) => {
       user_id: userId,
       name,
       role,
+      approval_status,
       created_at: new Date().toISOString()
     });
 
-    return res.status(201).json({ success: true, user_id: userId, message: 'Registration successful' });
+    const message = role === 'volunteer'
+      ? 'Registration successful! Your account is pending admin approval.'
+      : 'Registration successful';
+
+    return res.status(201).json({ success: true, user_id: userId, approval_status, message });
   } catch (err) {
     return res.status(500).json({ error: 'Server error' });
   }
@@ -436,9 +456,31 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const profile = await getUserProfile(data.user.id);
-    if (!profile) {
+    // Fetch full profile including approval_status
+    const { data: profile, error: profileError } = await supabase
+      .from('users')
+      .select('id, dummy_name, role, approval_status, is_licensed, expertise')
+      .eq('id', data.user.id)
+      .single();
+
+    if (profileError || !profile) {
       return res.status(404).json({ error: 'User profile not found' });
+    }
+
+    // Check volunteer approval status
+    if (profile.role === 'volunteer') {
+      if (profile.approval_status === 'pending') {
+        return res.status(403).json({
+          error: 'Your volunteer account is pending admin approval. Please wait for an administrator to review your application.',
+          code: 'PENDING_APPROVAL'
+        });
+      }
+      if (profile.approval_status === 'rejected') {
+        return res.status(403).json({
+          error: 'Your volunteer application has been rejected by an administrator. Please contact support for more information.',
+          code: 'REJECTED'
+        });
+      }
     }
 
     return res.status(200).json({
@@ -446,7 +488,8 @@ app.post('/api/login', async (req, res) => {
       user_id: data.user.id,
       name: profile.dummy_name,
       role: profile.role,
-      email: data.user.email
+      email: data.user.email,
+      approval_status: profile.approval_status || 'approved'
     });
   } catch (err) {
     return res.status(500).json({ error: 'Server error' });
@@ -1133,7 +1176,281 @@ app.delete('/api/admin/volunteers/:id', async (req, res) => {
   }
 });
 
-// GET /api/admin/volunteer-rankings — rank volunteers by student impact
+// ==================== Admin: User Management ====================
+
+// GET /api/admin/users — list all users (all roles)
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, dummy_name, role, approval_status, is_licensed, expertise, created_at')
+      .order('created_at', { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ users: data || [] });
+  } catch (err) {
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/users/:id — delete any user
+app.delete('/api/admin/users/:id', async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const { error: deleteUserErr } = await supabase.from('users').delete().eq('id', userId);
+    if (deleteUserErr) return res.status(500).json({ error: deleteUserErr.message });
+
+    const { error: deleteAuthErr } = await supabase.auth.admin.deleteUser(userId);
+    if (deleteAuthErr) return res.status(500).json({ error: deleteAuthErr.message });
+
+    return res.status(200).json({ success: true, message: 'User removed' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ==================== Admin: Volunteer Approval ====================
+
+// GET /api/admin/pending-volunteers — list volunteers pending approval
+app.get('/api/admin/pending-volunteers', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, dummy_name, role, approval_status, is_licensed, expertise, created_at')
+      .eq('role', 'volunteer')
+      .eq('approval_status', 'pending')
+      .order('created_at', { ascending: true });
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ volunteers: data || [] });
+  } catch (err) {
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/admin/volunteers/:id/approve — approve a volunteer
+app.post('/api/admin/volunteers/:id/approve', async (req, res) => {
+  try {
+    const volunteerId = req.params.id;
+    const { error } = await supabase
+      .from('users')
+      .update({ approval_status: 'approved' })
+      .eq('id', volunteerId)
+      .eq('role', 'volunteer');
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ success: true, message: 'Volunteer approved' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/admin/volunteers/:id/reject — reject a volunteer
+app.post('/api/admin/volunteers/:id/reject', async (req, res) => {
+  try {
+    const volunteerId = req.params.id;
+    const { error } = await supabase
+      .from('users')
+      .update({ approval_status: 'rejected' })
+      .eq('id', volunteerId)
+      .eq('role', 'volunteer');
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ success: true, message: 'Volunteer rejected' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ==================== Student Feedback ====================
+
+// POST /api/feedback — submit feedback after volunteer session
+app.post('/api/feedback', async (req, res) => {
+  try {
+    const { user_id, volunteer_id, rating, feedback_text = '' } = req.body;
+
+    if (!user_id || !volunteer_id) {
+      return res.status(400).json({ error: 'user_id and volunteer_id are required' });
+    }
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'rating must be between 1 and 5' });
+    }
+
+    const userCheck = await requireUserWithRole(user_id, 'user');
+    if (!userCheck.ok) return res.status(404).json({ error: 'User not found' });
+
+    const volunteerCheck = await requireUserWithRole(volunteer_id, 'volunteer');
+    if (!volunteerCheck.ok) return res.status(404).json({ error: 'Volunteer not found' });
+
+    // AI sentiment analysis via Mistral
+    let sentiment_score = 0;
+    let ai_analysis = '';
+    const cleanText = `${feedback_text}`.trim();
+
+    if (cleanText.length > 5 && process.env.MISTRAL_API_KEY) {
+      try {
+        const mistral = await getMistral();
+        const analysisPrompt = `Analyze the following student feedback about a volunteer mentor in a mental health support platform. Return ONLY valid JSON with no markdown formatting.
+
+Student feedback: "${cleanText.slice(0, 2000)}"
+Rating given: ${rating}/5
+
+Return this exact JSON structure:
+{
+  "sentiment_score": <number from -1.0 (very negative) to 1.0 (very positive)>,
+  "summary": "<one sentence summary of the feedback>",
+  "key_positives": ["<positive aspect 1>", "<positive aspect 2>"],
+  "key_concerns": ["<concern 1>", "<concern 2>"],
+  "volunteer_quality": "<one of: Excellent, Good, Average, Below Average, Poor>"
+}
+
+Respond with ONLY the JSON object, nothing else.`;
+
+        const response = await mistral.chat.complete({
+          model: 'mistral-small-latest',
+          messages: [{ role: 'user', content: analysisPrompt }],
+          maxTokens: 300,
+          temperature: 0.1
+        });
+
+        const rawText = response.choices[0].message.content.trim();
+        const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+        sentiment_score = typeof parsed.sentiment_score === 'number' ? parsed.sentiment_score : 0;
+        ai_analysis = JSON.stringify(parsed);
+        console.log('Feedback AI analysis for volunteer:', volunteer_id, '-> sentiment:', sentiment_score);
+      } catch (aiErr) {
+        console.warn('Feedback AI analysis failed (non-fatal):', aiErr.message);
+        // Fallback: estimate sentiment from rating
+        sentiment_score = (rating - 3) / 2; // Maps 1-5 to -1.0 to 1.0
+      }
+    } else {
+      // No text or no API key — estimate from rating
+      sentiment_score = (rating - 3) / 2;
+    }
+
+    const { data: inserted, error } = await supabase
+      .from('volunteer_feedback')
+      .insert([{
+        user_id,
+        volunteer_id,
+        rating,
+        feedback_text: cleanText.slice(0, 1000),
+        sentiment_score,
+        ai_analysis
+      }])
+      .select()
+      .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    return res.status(201).json({
+      success: true,
+      feedback: {
+        id: inserted.id,
+        rating: inserted.rating,
+        sentiment_score: inserted.sentiment_score,
+        created_at: inserted.created_at
+      }
+    });
+  } catch (err) {
+    console.error('Feedback error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/feedback/volunteer/:volunteer_id — get all feedback for a volunteer
+app.get('/api/feedback/volunteer/:volunteer_id', async (req, res) => {
+  try {
+    const volunteerId = req.params.volunteer_id;
+    const { data, error } = await supabase
+      .from('volunteer_feedback')
+      .select('id, user_id, rating, feedback_text, sentiment_score, ai_analysis, created_at')
+      .eq('volunteer_id', volunteerId)
+      .order('created_at', { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    const feedbacks = (data || []).map(f => {
+      let analysis = {};
+      try { analysis = JSON.parse(f.ai_analysis || '{}'); } catch (_) {}
+      return {
+        ...f,
+        ai_analysis: analysis
+      };
+    });
+
+    // Calculate aggregate stats
+    const ratings = feedbacks.map(f => f.rating);
+    const avg_rating = ratings.length > 0 ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10 : null;
+    const avg_sentiment = feedbacks.length > 0
+      ? Math.round((feedbacks.reduce((a, f) => a + (f.sentiment_score || 0), 0) / feedbacks.length) * 100) / 100
+      : null;
+
+    return res.status(200).json({
+      feedbacks,
+      stats: {
+        total_feedbacks: feedbacks.length,
+        avg_rating,
+        avg_sentiment
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/feedback/pending/:user_id — check if user has unreviewd released volunteers
+app.get('/api/feedback/pending/:user_id', async (req, res) => {
+  try {
+    const userId = req.params.user_id;
+    const userCheck = await requireUserWithRole(userId, 'user');
+    if (!userCheck.ok) return res.status(404).json({ error: 'User not found' });
+
+    // Find the most recent RELEASE event for this user
+    const { data: releases, error: relErr } = await supabase
+      .from('volunteer_chats')
+      .select('user_id, volunteer_id, created_at')
+      .eq('user_id', userId)
+      .eq('message', VOLUNTEER_CTRL_RELEASE)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (relErr || !releases || releases.length === 0) {
+      return res.status(200).json({ has_pending: false });
+    }
+
+    // Check which of these releases the user has NOT yet given feedback for
+    for (const release of releases) {
+      const { data: existingFeedback } = await supabase
+        .from('volunteer_feedback')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('volunteer_id', release.volunteer_id)
+        .gte('created_at', release.created_at)
+        .limit(1);
+
+      if (!existingFeedback || existingFeedback.length === 0) {
+        // Get volunteer name
+        const volProfile = await getUserProfile(release.volunteer_id);
+        return res.status(200).json({
+          has_pending: true,
+          volunteer_id: release.volunteer_id,
+          volunteer_name: volProfile ? volProfile.dummy_name : 'Your Volunteer',
+          released_at: release.created_at
+        });
+      }
+    }
+
+    return res.status(200).json({ has_pending: false });
+  } catch (err) {
+    console.error('Pending feedback check error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/admin/volunteer-rankings — rank volunteers by student impact + feedback
 app.get('/api/admin/volunteer-rankings', async (req, res) => {
   try {
     const POSITIVE_MOODS = new Set(['happy', 'calm', 'content', 'hopeful', 'relaxed', 'joyful', 'grateful', 'excited']);
@@ -1184,7 +1501,20 @@ app.get('/api/admin/volunteer-rankings', async (req, res) => {
       .order('created_at', { ascending: true });
     if (moodErr) return res.status(500).json({ error: moodErr.message });
 
-    // 4. Score each volunteer
+    // 4. Get all volunteer feedback
+    const { data: allFeedback, error: fbErr } = await supabase
+      .from('volunteer_feedback')
+      .select('volunteer_id, rating, sentiment_score');
+    // Non-fatal if feedback table doesn't exist yet
+    const feedbackByVolunteer = {};
+    if (!fbErr && allFeedback) {
+      for (const fb of allFeedback) {
+        if (!feedbackByVolunteer[fb.volunteer_id]) feedbackByVolunteer[fb.volunteer_id] = [];
+        feedbackByVolunteer[fb.volunteer_id].push(fb);
+      }
+    }
+
+    // 5. Score each volunteer
     const rankings = [];
 
     for (const vol of (volunteers || [])) {
@@ -1226,13 +1556,34 @@ app.get('/api/admin/volunteer-rankings', async (req, res) => {
       }
 
       const total = positiveImpacts + negativeImpacts + neutralImpacts;
-      const score = total > 0 ? Math.round(((positiveImpacts - negativeImpacts) / total) * 100) : null;
+      const moodScore = total > 0 ? Math.round(((positiveImpacts - negativeImpacts) / total) * 100) : null;
+
+      // Calculate feedback-based score
+      const volFeedbacks = feedbackByVolunteer[vol.id] || [];
+      let feedbackAvgRating = null;
+      let feedbackScore = null;
+      if (volFeedbacks.length > 0) {
+        feedbackAvgRating = Math.round((volFeedbacks.reduce((s, f) => s + f.rating, 0) / volFeedbacks.length) * 10) / 10;
+        const avgSentiment = volFeedbacks.reduce((s, f) => s + (f.sentiment_score || 0), 0) / volFeedbacks.length;
+        // Score: avg rating * 20 (maps 1-5 to 20-100) + sentiment adjustment (-10 to +10)
+        feedbackScore = Math.round(feedbackAvgRating * 20 + avgSentiment * 10);
+      }
+
+      // Blended score: 60% feedback, 40% mood impact (if both available)
+      let blendedScore;
+      if (feedbackScore !== null && moodScore !== null) {
+        blendedScore = Math.round(feedbackScore * 0.6 + moodScore * 0.4);
+      } else if (feedbackScore !== null) {
+        blendedScore = feedbackScore;
+      } else {
+        blendedScore = moodScore;
+      }
 
       let label = 'No Data';
       let badge = 'grey';
-      if (score !== null) {
-        if (score >= 50) { label = 'Excellent'; badge = 'green'; }
-        else if (score >= 0) { label = 'Good'; badge = 'yellow'; }
+      if (blendedScore !== null) {
+        if (blendedScore >= 50) { label = 'Excellent'; badge = 'green'; }
+        else if (blendedScore >= 0) { label = 'Good'; badge = 'yellow'; }
         else { label = 'Needs Improvement'; badge = 'red'; }
       }
 
@@ -1243,7 +1594,11 @@ app.get('/api/admin/volunteer-rankings', async (req, res) => {
         positive_impacts: positiveImpacts,
         negative_impacts: negativeImpacts,
         neutral_impacts: neutralImpacts,
-        score,
+        score: blendedScore,
+        mood_score: moodScore,
+        feedback_avg_rating: feedbackAvgRating,
+        feedback_count: volFeedbacks.length,
+        feedback_score: feedbackScore,
         label,
         badge
       });
