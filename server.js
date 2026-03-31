@@ -9,7 +9,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -361,7 +361,7 @@ const getMistral = async () => {
 async function getUserProfile(userId) {
   const { data, error } = await supabase
     .from('users')
-    .select('id, dummy_name, role')
+    .select('id, dummy_name, role, region, age')
     .eq('id', userId)
     .single();
 
@@ -380,7 +380,7 @@ async function requireUserWithRole(userId, role) {
 
 app.post('/api/register', async (req, res) => {
   try {
-    const { email, password, name, role = 'user', is_licensed = false, expertise = '' } = req.body;
+    const { email, password, name, role = 'user', is_licensed = false, expertise = '',region, age } = req.body;
 
     // Admin accounts can only be created via direct SQL by the DBMS manager
     if (role === 'admin') {
@@ -406,7 +406,9 @@ app.post('/api/register', async (req, res) => {
       id: userId,
       dummy_name: name,
       role,
-      approval_status
+      approval_status,
+      region: region || null,
+      age: age ? parseInt(age) : null
     };
 
     // Add volunteer-specific fields
@@ -432,6 +434,8 @@ app.post('/api/register', async (req, res) => {
       name,
       role,
       approval_status,
+      region: region || null,
+      age: age ? parseInt(age) : null,
       created_at: new Date().toISOString()
     });
 
@@ -506,7 +510,9 @@ app.get('/api/user/:user_id', async (req, res) => {
   return res.status(200).json({
     id: profile.id,
     name: profile.dummy_name,
-    role: profile.role
+    role: profile.role,
+    region: profile.region,
+    age: profile.age
   });
 });
 
@@ -1622,48 +1628,91 @@ app.get('/api/admin/volunteer-rankings', async (req, res) => {
 app.get('/api/admin/analytics', async (req, res) => {
   try {
     const { data: users, error } = await supabase.from('users').select('role');
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
+    if (error) return res.status(500).json({ error: error.message });
 
     const role_distribution = {};
-    users.forEach((user) => {
-      role_distribution[user.role] = (role_distribution[user.role] || 0) + 1;
-    });
+    users.forEach(u => { role_distribution[u.role] = (role_distribution[u.role] || 0) + 1; });
 
-    // Fetch mood distribution from Supabase mood_logs table
-    const { data: moodLogs, error: moodError } = await supabase.from('mood_logs').select('mood');
+    // Mood distribution
+    const { data: moodLogs } = await supabase.from('mood_logs').select('mood');
     const mood_distribution = {};
     let total_mood_entries = 0;
-    if (!moodError && moodLogs) {
-      moodLogs.forEach(entry => {
-        mood_distribution[entry.mood] = (mood_distribution[entry.mood] || 0) + 1;
-        total_mood_entries++;
-      });
-    }
-
-    const all_stress_scores = [];
-    Object.values(quiz_responses_db).forEach((user_quizzes) => {
-      user_quizzes.forEach((quiz) => {
-        all_stress_scores.push(quiz.average_score);
-      });
+    (moodLogs || []).forEach(entry => {
+      mood_distribution[entry.mood] = (mood_distribution[entry.mood] || 0) + 1;
+      total_mood_entries++;
     });
 
-    const average_stress = all_stress_scores.length ? all_stress_scores.reduce((a, b) => a + b, 0) / all_stress_scores.length : 0;
+    // ✅ NEW: Region + Age breakdown with mood
+    const { data: userDetails } = await supabase
+      .from('users')
+      .select('id, region, age, role')
+      .eq('role', 'user');
 
-    let total_quiz_attempts = 0;
-    Object.values(quiz_responses_db).forEach((q) => {
-      total_quiz_attempts += q.length;
+    const userIds = (userDetails || []).map(u => u.id);
+
+    // Get negative mood counts per user
+    const { data: negativeMoods } = await supabase
+      .from('mood_logs')
+      .select('user_id, mood')
+      .in('mood', ['sad', 'anxious', 'stressed'])
+      .in('user_id', userIds);
+
+    // Count negative moods per user
+    const negativeMoodsByUser = {};
+    (negativeMoods || []).forEach(m => {
+      negativeMoodsByUser[m.user_id] = (negativeMoodsByUser[m.user_id] || 0) + 1;
     });
 
-    return res.status(200).json({
+    // Build region breakdown
+    const region_breakdown = {};
+    // Build age group breakdown
+    const age_group_breakdown = {
+      '13-15': { total: 0, negative_moods: 0 },
+      '16-18': { total: 0, negative_moods: 0 },
+      '19-21': { total: 0, negative_moods: 0 },
+      '22-25': { total: 0, negative_moods: 0 },
+      'Unknown': { total: 0, negative_moods: 0 }
+    };
+
+    (userDetails || []).forEach(u => {
+      const region = u.region || 'Unknown';
+      const negCount = negativeMoodsByUser[u.id] || 0;
+
+      // Region
+      if (!region_breakdown[region]) {
+        region_breakdown[region] = { total_users: 0, negative_moods: 0 };
+      }
+      region_breakdown[region].total_users++;
+      region_breakdown[region].negative_moods += negCount;
+
+      // Age group
+      const age = u.age ? parseInt(u.age) : null;
+      let group = 'Unknown';
+      if (age) {
+        if (age <= 15) group = '13-15';
+        else if (age <= 18) group = '16-18';
+        else if (age <= 21) group = '19-21';
+        else if (age <= 25) group = '22-25';
+      }
+      age_group_breakdown[group].total++;
+      age_group_breakdown[group].negative_moods += negCount;
+    });
+
+    // Quiz attempts count
+    const { data: quizAttempts } = await supabase.from('quiz_attempts').select('id');
+    const total_quiz_attempts = (quizAttempts || []).length;
+
+    return res.json({
       total_users: users.length,
       role_distribution,
       mood_distribution,
-      average_stress_level: Math.round(average_stress * 100) / 100,
+      average_stress_level: 0,
       total_mood_entries,
-      total_quiz_attempts
+      total_quiz_attempts,
+      region_breakdown,      // ← new
+      age_group_breakdown    // ← new
     });
+
   } catch (err) {
     return res.status(500).json({ error: 'Server error' });
   }

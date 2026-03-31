@@ -343,9 +343,10 @@ async function handleRegister(e) {
     const role = document.getElementById('registerRole').value;
     const is_licensed = document.getElementById('registerLicensed')?.checked || false;
     const expertise = document.getElementById('registerExpertise')?.value || '';
-
+    const region = document.getElementById('registerRegion')?.value || null;
+    const age = document.getElementById('registerAge')?.value || null;
     try {
-        const body = { name, email, password, role };
+        const body = { name, email, password, role, region, age };
         if (role === 'volunteer') {
             body.is_licensed = is_licensed;
             body.expertise = expertise;
@@ -2318,6 +2319,8 @@ async function loadAdminDashboard() {
             document.getElementById('adminAvgStress').textContent = data.average_stress_level.toFixed(2);
             loadMoodDistributionChart(data.mood_distribution);
             loadRoleDistributionChart(data.role_distribution);
+            loadAgeGroupChart(data.age_group_breakdown);
+            loadRegionChart(data.region_breakdown);
         }
     } catch (error) {
         showToast('Error loading analytics', 'error');
@@ -2791,7 +2794,115 @@ async function submitFeedback() {
         if (btn) { btn.disabled = false; btn.textContent = 'Submit Feedback'; }
     }
 }
+let ageGroupChart = null;
+let regionChart = null;
 
+function loadAgeGroupChart(ageGroupBreakdown) {
+    const ctx = document.getElementById('ageGroupChart');
+    if (!ctx || !ageGroupBreakdown) return;
+
+    const labels = Object.keys(ageGroupBreakdown).filter(k => ageGroupBreakdown[k].total > 0);
+    const negativeMoods = labels.map(k => ageGroupBreakdown[k].negative_moods);
+    const totalUsers = labels.map(k => ageGroupBreakdown[k].total);
+
+    if (ageGroupChart) ageGroupChart.destroy();
+    ageGroupChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Negative mood logs',
+                    data: negativeMoods,
+                    backgroundColor: '#f87171',
+                    borderRadius: 8
+                },
+                {
+                    label: 'Total users',
+                    data: totalUsers,
+                    backgroundColor: '#a5b4fc',
+                    borderRadius: 8
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        afterLabel: function(context) {
+                            const idx = context.dataIndex;
+                            const group = labels[idx];
+                            const total = ageGroupBreakdown[group].total;
+                            const neg = ageGroupBreakdown[group].negative_moods;
+                            if (context.datasetIndex === 0 && total > 0) {
+                                return `${Math.round((neg / total) * 100)}% of this group logged negative moods`;
+                            }
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 } }
+            }
+        }
+    });
+}
+
+function loadRegionChart(regionBreakdown) {
+    const ctx = document.getElementById('regionChart');
+    if (!ctx || !regionBreakdown) return;
+
+    const labels = Object.keys(regionBreakdown).filter(k => regionBreakdown[k].total_users > 0);
+    const negativeMoods = labels.map(k => regionBreakdown[k].negative_moods);
+    const totalUsers = labels.map(k => regionBreakdown[k].total_users);
+
+    if (regionChart) regionChart.destroy();
+    regionChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Negative mood logs',
+                    data: negativeMoods,
+                    backgroundColor: '#fb923c',
+                    borderRadius: 8
+                },
+                {
+                    label: 'Total users',
+                    data: totalUsers,
+                    backgroundColor: '#6ee7b7',
+                    borderRadius: 8
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            indexAxis: 'y',
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        afterLabel: function(context) {
+                            const idx = context.dataIndex;
+                            const region = labels[idx];
+                            const total = regionBreakdown[region].total_users;
+                            const neg = regionBreakdown[region].negative_moods;
+                            if (context.datasetIndex === 0 && total > 0) {
+                                return `${Math.round((neg / total) * 100)}% of this region logged negative moods`;
+                            }
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { beginAtZero: true, ticks: { stepSize: 1 } }
+            }
+        }
+    });
+}
 
 function loadMoodDistributionChart(moodDistribution) {
     const ctx = document.getElementById('moodDistributionChart');
