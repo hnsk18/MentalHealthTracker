@@ -1078,16 +1078,43 @@ app.delete('/api/chat/:user_id', async (req, res) => {
 // ==================== Recommendations ====================
 
 app.get('/api/music-recommendation/:mood', (req, res) => {
-  const mood = req.params.mood;
-  const music_recommendations = {
-    happy: { genre: 'Upbeat Pop', youtube_query: 'upbeat happy music', description: 'Feel-good tracks to boost your mood!' },
-    sad: { genre: 'Emotional Ballads', youtube_query: 'emotional healing music', description: 'Soothing music to help you process emotions.' },
-    stressed: { genre: 'Chill Ambient', youtube_query: 'ambient relaxation music', description: 'Calming background music for stress relief.' },
-    anxious: { genre: 'Meditation Sounds', youtube_query: 'meditation relaxation music', description: 'Peaceful sounds to ease anxiety.' },
-    calm: { genre: 'Soft Jazz', youtube_query: 'smooth jazz music', description: 'Smooth tunes to maintain your peaceful state.' }
+  const mood = req.params.mood || 'calm';
+
+  const recommendations = {
+    happy: [
+      { "title": "Happy", "artist": "Pharrell Williams", "link": "https://www.youtube.com/watch?v=ZbZSe6N_BXs", "reason": "Boosts energy and maintains a positive mood" },
+      { "title": "Good Life", "artist": "OneRepublic", "link": "https://www.youtube.com/watch?v=jZhQOvvV45w", "reason": "Encourages positivity and gratitude" },
+      { "title": "On Top of the World", "artist": "Imagine Dragons", "link": "https://www.youtube.com/watch?v=w5tWYmIOWGk", "reason": "Enhances confidence and joy" },
+      { "title": "Soft Ambient Instrumental", "artist": "Ambient", "link": "https://www.youtube.com/watch?v=lFcSrYw-ARY", "reason": "Keeps the mind relaxed and balanced" }
+    ],
+    sad: [
+      { "title": "Let Her Go", "artist": "Passenger", "link": "https://www.youtube.com/watch?v=RBumgq5yVrA", "reason": "Helps process emotions gently" },
+      { "title": "Fix You", "artist": "Coldplay", "link": "https://www.youtube.com/watch?v=k4V3Mo61fJM", "reason": "Provides emotional healing" },
+      { "title": "Fight Song", "artist": "Rachel Platten", "link": "https://www.youtube.com/watch?v=xo1VInw-SKc", "reason": "Gradually builds strength and positivity" },
+      { "title": "Emotional Healing Playlist", "artist": "Mixed", "link": "https://www.youtube.com/watch?v=2Vv-BfVoq4g", "reason": "Transitions from sadness to uplifting mood" }
+    ],
+    anxious: [
+      { "title": "Weightless", "artist": "Marconi Union", "link": "https://www.youtube.com/watch?v=UfcAVejslrU", "reason": "Scientifically proven to reduce anxiety" },
+      { "title": "River Flows in You", "artist": "Yiruma", "link": "https://www.youtube.com/watch?v=7maJOI3QMu0", "reason": "Calming piano reduces mental stress" },
+      { "title": "Sunset Lover", "artist": "Petit Biscuit", "link": "https://www.youtube.com/watch?v=4y33h81phKU", "reason": "Soft electronic music relaxes the mind" },
+      { "title": "Meditation Relax Music", "artist": "Ambient", "link": "https://www.youtube.com/watch?v=1ZYbU82GVz4", "reason": "Helps control breathing and calm thoughts" }
+    ],
+    stressed: [
+      { "title": "Lofi Beats", "artist": "Lofi", "link": "https://www.youtube.com/watch?v=jfKfPfyJRdk", "reason": "Improves focus and reduces stress" },
+      { "title": "Time", "artist": "Hans Zimmer", "link": "https://www.youtube.com/watch?v=RxabLA7UQ9k", "reason": "Deep calming and emotional reset" },
+      { "title": "Experience", "artist": "Ludovico Einaudi", "link": "https://www.youtube.com/watch?v=hN_q-_nGv4U", "reason": "Gradual stress relief through music" },
+      { "title": "Calming Music", "artist": "Relax", "link": "https://www.youtube.com/watch?v=jfKfPfyJRdk", "reason": "Maintains relaxed and focused state" }
+    ],
+    calm: [
+      { "title": "Soft Ambient Instrumental", "artist": "Ambient", "link": "https://www.youtube.com/watch?v=lFcSrYw-ARY", "reason": "Maintains peaceful state" },
+      { "title": "Bloom", "artist": "The Paper Kites", "link": "https://www.youtube.com/watch?v=8inJtTG_DuU", "reason": "Gentle soothing vibe" },
+      { "title": "Cold Little Heart", "artist": "Michael Kiwanuka", "link": "https://www.youtube.com/watch?v=nOubjLM9Cbc", "reason": "Deep relaxation and reflection" },
+      { "title": "Night Owl", "artist": "Galimatias", "link": "https://www.youtube.com/watch?v=9HnJXx2Zf-0", "reason": "Smooth ambient music for stability" }
+    ]
   };
 
-  return res.status(200).json(music_recommendations[mood] || { genre: 'Peaceful Music', youtube_query: 'relaxing music', description: 'Enjoy some calming music.' });
+  const defaultRecs = recommendations['calm'];
+  return res.status(200).json(recommendations[mood] || defaultRecs);
 });
 
 // ==================== Admin ====================

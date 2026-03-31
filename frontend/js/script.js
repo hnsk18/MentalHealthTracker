@@ -888,19 +888,88 @@ async function loadUserDashboard() {
         console.error('Error loading dashboard:', error);
     }
 }
+let currentMusicQueue = [];
+let currentPlayingIndex = 0;
 
 async function loadMusicRecommendation(mood) {
     try {
         const response = await fetch(`${API_BASE}/music-recommendation/${mood}`);
         const data = await response.json();
-        if (response.ok) {
+        if (response.ok && Array.isArray(data)) {
             document.getElementById('musicSection').classList.remove('hidden');
-            document.getElementById('musicText').textContent = `Genre: ${data.genre} - ${data.description}`;
-            document.getElementById('musicLink').href = `https://www.youtube.com/results?search_query=${encodeURIComponent(data.youtube_query)}`;
+            currentMusicQueue = data;
+            currentPlayingIndex = 0;
+            renderMusicPlaylist();
+            playSong(0);
         }
     } catch (error) {
         console.error('Error loading music recommendation:', error);
     }
+}
+
+function renderMusicPlaylist() {
+    const container = document.getElementById('musicPlaylistContainer');
+    if (!container) return;
+    
+    container.innerHTML = currentMusicQueue.map((song, index) => `
+        <div onclick="playSong(${index})" class="music-item cursor-pointer p-4 rounded-xl border-2 transition-all duration-200 ${index === currentPlayingIndex ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'bg-white border-transparent hover:border-gray-200 hover:bg-gray-50'}">
+            <div class="flex gap-3 items-center">
+                <div class="h-10 w-10 flex-shrink-0 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-lg flex items-center justify-center text-indigo-600 font-bold shadow-inner">
+                    ${index === currentPlayingIndex ? '<span class="animate-pulse">▶</span>' : index + 1}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-bold text-gray-800 truncate">${escapeHtml(song.title)}</p>
+                    <p class="text-xs text-gray-500 truncate">${escapeHtml(song.artist)} • Track ${index + 1}</p>
+                </div>
+            </div>
+            <p class="text-xs text-indigo-700/80 mt-2 italic border-t border-indigo-100 pt-2 border-dashed bg-indigo-50/30 rounded-b-lg px-1">${escapeHtml(song.reason)}</p>
+        </div>
+    `).join('');
+}
+
+function playSong(index) {
+    if (index < 0 || index >= currentMusicQueue.length) return;
+    currentPlayingIndex = index;
+    const song = currentMusicQueue[index];
+    
+    function getEmbedUrl(sourceUrl) {
+        if (!sourceUrl) return '';
+        if (sourceUrl.includes('embed/')) return sourceUrl;
+        try {
+            const urlObj = new URL(sourceUrl);
+            const v = urlObj.searchParams.get('v');
+            const list = urlObj.searchParams.get('list');
+            if (v) {
+                return `https://www.youtube.com/embed/${v}${list ? '?list=' + list : ''}`;
+            }
+        } catch(e) {}
+        return sourceUrl;
+    }
+
+    const iframe = document.getElementById('musicPlayerIframe');
+    if (iframe) {
+        iframe.src = getEmbedUrl(song.link || song.youtube_url);
+    }
+    
+    const titleEl = document.getElementById('nowPlayingTitle');
+    const artistEl = document.getElementById('nowPlayingArtist');
+    const categoryEl = document.getElementById('nowPlayingCategory');
+    
+    if (titleEl) titleEl.textContent = song.title;
+    if (artistEl) artistEl.textContent = song.artist;
+    if (categoryEl) categoryEl.textContent = 'Track ' + (index + 1);
+    
+    // Re-render to update active styling
+    renderMusicPlaylist();
+}
+
+function playNextSong() {
+    if (currentMusicQueue.length === 0) return;
+    let nextIndex = currentPlayingIndex + 1;
+    if (nextIndex >= currentMusicQueue.length) {
+        nextIndex = 0;
+    }
+    playSong(nextIndex);
 }
 
 function loadMoodTrendChart(moodHistory) {
