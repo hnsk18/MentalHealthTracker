@@ -679,7 +679,8 @@ async function submitFeelingPost() {
 
     await loadCommunityPosts();
     renderCommunityFeed();
-    showToast('Your feeling was posted anonymously.', 'success');
+    const postedAs = currentUser.role === 'volunteer' ? 'Volunteer' : 'Anonymous User';
+    showToast(`Your post was published as ${postedAs}.`, 'success');
 }
 
 async function addCommentToPost(postId) {
@@ -717,6 +718,20 @@ function seedCommunityPosts() {
     showToast('Sample seeding is disabled in database mode. Create a real post instead.', 'info');
 }
 
+function normalizeFeedAuthor(entity) {
+    const role = entity && entity.role === 'volunteer' ? 'volunteer' : 'user';
+    const displayName = (entity && (entity.displayName || entity.petName))
+        || (role === 'volunteer' ? 'Volunteer' : 'Anonymous Friend');
+    return { role, displayName };
+}
+
+function getRoleBadge(role) {
+    if (role === 'volunteer') {
+        return '<span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">Volunteer</span>';
+    }
+    return '<span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">Anonymous User</span>';
+}
+
 function renderCommunityFeed() {
     const container = document.getElementById('communityFeed');
     if (!container) return;
@@ -727,10 +742,15 @@ function renderCommunityFeed() {
     }
 
     container.innerHTML = communityPosts.map(post => {
+        const postAuthor = normalizeFeedAuthor(post);
         const commentsHtml = post.comments.length
             ? post.comments.map(comment => `
                 <div class="bg-indigo-50 rounded-lg px-3 py-2">
-                    <p class="text-sm text-gray-700"><span class="font-semibold text-indigo-700">${escapeHtml(comment.petName)}</span>: ${escapeHtml(comment.text)}</p>
+                    <div class="flex items-center gap-2 mb-1">
+                        <p class="text-sm text-gray-700"><span class="font-semibold text-indigo-700">${escapeHtml(normalizeFeedAuthor(comment).displayName)}</span></p>
+                        ${getRoleBadge(normalizeFeedAuthor(comment).role)}
+                    </div>
+                    <p class="text-sm text-gray-700">${escapeHtml(comment.text)}</p>
                     <p class="text-xs text-gray-500 mt-1">${formatPostTime(comment.timestamp)}</p>
                 </div>
             `).join('')
@@ -740,10 +760,10 @@ function renderCommunityFeed() {
             <div class="border border-gray-200 rounded-2xl p-5 bg-gradient-to-br from-white to-indigo-50/40">
                 <div class="flex justify-between items-start gap-4 mb-3">
                     <div>
-                        <p class="font-bold text-indigo-700">${escapeHtml(post.petName)}</p>
+                        <p class="font-bold text-indigo-700">${escapeHtml(postAuthor.displayName)}</p>
                         <p class="text-xs text-gray-500">${formatPostTime(post.timestamp)}</p>
                     </div>
-                    <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">Anonymous</span>
+                    ${getRoleBadge(postAuthor.role)}
                 </div>
                 <p class="text-gray-800 leading-relaxed mb-4">${escapeHtml(post.text)}</p>
                 <div class="space-y-2 mb-3">${commentsHtml}</div>
@@ -2255,10 +2275,15 @@ function renderVolunteerCommunityFeed() {
     }
 
     container.innerHTML = communityPosts.map(post => {
+        const postAuthor = normalizeFeedAuthor(post);
         const comments = post.comments && post.comments.length
             ? post.comments.map(comment => `
                 <div class="bg-purple-50 rounded-lg px-3 py-2">
-                    <p class="text-sm text-gray-700"><span class="font-semibold text-purple-700">${escapeHtml(comment.petName)}</span>: ${escapeHtml(comment.text)}</p>
+                    <div class="flex items-center gap-2 mb-1">
+                        <p class="text-sm text-gray-700"><span class="font-semibold text-purple-700">${escapeHtml(normalizeFeedAuthor(comment).displayName)}</span></p>
+                        ${getRoleBadge(normalizeFeedAuthor(comment).role)}
+                    </div>
+                    <p class="text-sm text-gray-700">${escapeHtml(comment.text)}</p>
                 </div>
             `).join('')
             : '<p class="text-sm text-gray-500">No replies yet.</p>';
@@ -2266,8 +2291,11 @@ function renderVolunteerCommunityFeed() {
         return `
             <div class="border border-gray-200 rounded-xl p-4">
                 <div class="flex justify-between items-start mb-2">
-                    <p class="font-semibold text-indigo-700">${escapeHtml(post.petName)}</p>
-                    <p class="text-xs text-gray-500">${formatPostTime(post.timestamp)}</p>
+                    <div>
+                        <p class="font-semibold text-indigo-700">${escapeHtml(postAuthor.displayName)}</p>
+                        <p class="text-xs text-gray-500">${formatPostTime(post.timestamp)}</p>
+                    </div>
+                    ${getRoleBadge(postAuthor.role)}
                 </div>
                 <p class="text-gray-800 mb-3">${escapeHtml(post.text)}</p>
                 <div class="space-y-2 mb-3">${comments}</div>

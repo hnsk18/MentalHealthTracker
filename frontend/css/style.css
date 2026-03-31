@@ -13,6 +13,35 @@ body {
     color: #333333;
 }
 
+/* Radius normalization: keep corners consistent and avoid oversized pill UI */
+:root {
+    --radius-xs: 4px;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 10px;
+    --radius-xl: 12px;
+}
+
+.rounded-none { border-radius: 0 !important; }
+.rounded-sm { border-radius: var(--radius-xs) !important; }
+.rounded,
+.rounded-md { border-radius: var(--radius-sm) !important; }
+.rounded-lg { border-radius: var(--radius-md) !important; }
+.rounded-xl,
+.rounded-2xl,
+.rounded-3xl,
+.rounded-full,
+.rounded-pill { border-radius: var(--radius-lg) !important; }
+
+button,
+input,
+select,
+textarea,
+.card,
+.dashboard-card {
+    border-radius: var(--radius-lg);
+}
+
 .page-section {
     animation: fadeIn 0.3s ease-in;
 }

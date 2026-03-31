@@ -264,6 +264,24 @@ const getAnonymousName = (userId) => {
   return `${ANON_PREFIXES[seed % ANON_PREFIXES.length]} ${ANON_ANIMALS[(seed * 7) % ANON_ANIMALS.length]}`;
 };
 
+const getFeedIdentity = (profile = {}, fallbackUserId = null) => {
+  const role = profile.role === 'volunteer' ? 'volunteer' : 'user';
+  if (role === 'volunteer') {
+    const volunteerName = `${profile.name || profile.dummy_name || 'Volunteer'}`.trim();
+    return {
+      role,
+      displayName: volunteerName || 'Volunteer',
+      visibility: 'identified'
+    };
+  }
+
+  return {
+    role,
+    displayName: getAnonymousName(profile.id || fallbackUserId),
+    visibility: 'anonymous'
+  };
+};
+
 const MOOD_RESPONSES = {
   happy: {
     message: 'Great to see you feeling good! Keep it up 💙',
@@ -537,12 +555,12 @@ app.get('/api/feed/posts', async (req, res) => {
     if (userIds.length) {
       const { data: users, error: usersError } = await supabase
         .from('users')
-        .select('id, dummy_name')
+        .select('id, name, dummy_name, role')
         .in('id', userIds);
 
       if (usersError) return res.status(500).json({ error: usersError.message });
       usersById = (users || []).reduce((acc, u) => {
-        acc[u.id] = getAnonymousName(u.id);
+        acc[u.id] = getFeedIdentity(u, u.id);
         return acc;
       }, {});
     }
@@ -562,21 +580,25 @@ app.get('/api/feed/posts', async (req, res) => {
       if (commentUserIds.length) {
         const { data: commentUsers, error: commentUsersError } = await supabase
           .from('users')
-          .select('id, dummy_name')
+          .select('id, name, dummy_name, role')
           .in('id', commentUserIds);
         if (commentUsersError) return res.status(500).json({ error: commentUsersError.message });
         commentUsersById = (commentUsers || []).reduce((acc, u) => {
-          acc[u.id] = getAnonymousName(u.id);
+          acc[u.id] = getFeedIdentity(u, u.id);
           return acc;
         }, {});
       }
 
       (comments || []).forEach((c) => {
         if (!commentsByPost[c.post_id]) commentsByPost[c.post_id] = [];
+        const author = commentUsersById[c.user_id] || getFeedIdentity({}, c.user_id);
         commentsByPost[c.post_id].push({
           id: c.id,
           userId: c.user_id,
-          petName: commentUsersById[c.user_id] || 'Pet Friend',
+          role: author.role,
+          visibility: author.visibility,
+          displayName: author.displayName,
+          petName: author.displayName,
           text: c.comment,
           timestamp: c.created_at
         });
@@ -584,9 +606,17 @@ app.get('/api/feed/posts', async (req, res) => {
     }
 
     const payload = (posts || []).map((p) => ({
+      ...(function () {
+        const author = usersById[p.user_id] || getFeedIdentity({}, p.user_id);
+        return {
+          role: author.role,
+          visibility: author.visibility,
+          displayName: author.displayName,
+          petName: author.displayName
+        };
+      })(),
       id: p.id,
       userId: p.user_id,
-      petName: usersById[p.user_id] || 'Pet Friend',
       text: p.caption || '',
       image_url: p.image_url || null,
       timestamp: p.created_at,
@@ -619,12 +649,17 @@ app.post('/api/feed/posts', async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message });
 
+    const author = getFeedIdentity(check.profile, inserted.user_id);
+
     return res.status(201).json({
       success: true,
       post: {
         id: inserted.id,
         userId: inserted.user_id,
-        petName: getAnonymousName(inserted.user_id),
+        role: author.role,
+        visibility: author.visibility,
+        displayName: author.displayName,
+        petName: author.displayName,
         text: inserted.caption,
         timestamp: inserted.created_at,
         comments: []
@@ -665,13 +700,18 @@ app.post('/api/feed/posts/:post_id/comments', async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message });
 
+    const author = getFeedIdentity(check.profile, inserted.user_id);
+
     return res.status(201).json({
       success: true,
       comment: {
         id: inserted.id,
         postId: inserted.post_id,
         userId: inserted.user_id,
-        petName: getAnonymousName(inserted.user_id),
+        role: author.role,
+        visibility: author.visibility,
+        displayName: author.displayName,
+        petName: author.displayName,
         text: inserted.comment,
         timestamp: inserted.created_at
       }
