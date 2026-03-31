@@ -356,6 +356,7 @@ async function handleRegister(e) {
 
 function logout() {
     stopAllSecureChatPolling();
+    stopAdminSSE();
     currentUser = null;
     localStorage.removeItem('currentUser');
     hideNavbar();
@@ -367,6 +368,7 @@ function handleInvalidSession(message = 'Your session expired after a server res
     if (invalidSessionHandled) return;
     invalidSessionHandled = true;
     stopAllSecureChatPolling();
+    stopAdminSSE();
     currentUser = null;
     localStorage.removeItem('currentUser');
     hideNavbar();
@@ -2240,6 +2242,32 @@ function renderVolunteerCommunityFeed() {
 
 // ==================== Admin Dashboard ====================
 
+// ==================== Admin: Tab Management ====================
+
+let adminSSESource = null;
+let adminNotifications = [];
+
+function switchAdminTab(tab) {
+    ['analytics', 'volunteers', 'rankings'].forEach(t => {
+        const content = document.getElementById('adminTabContent-' + t);
+        const btn = document.getElementById('adminTab-' + t);
+        if (content) content.classList.toggle('hidden', t !== tab);
+        if (btn) {
+            if (t === tab) {
+                btn.classList.remove('bg-gray-100', 'text-gray-600');
+                btn.classList.add('bg-orange-500', 'text-white');
+            } else {
+                btn.classList.remove('bg-orange-500', 'text-white');
+                btn.classList.add('bg-gray-100', 'text-gray-600');
+            }
+        }
+    });
+    if (tab === 'volunteers') loadAdminVolunteers();
+    if (tab === 'rankings') loadVolunteerRankings();
+}
+
+// ==================== Admin: Dashboard Load ====================
+
 async function loadAdminDashboard() {
     try {
         const response = await fetch(`${API_BASE}/admin/analytics`);
@@ -2255,7 +2283,223 @@ async function loadAdminDashboard() {
     } catch (error) {
         showToast('Error loading analytics', 'error');
     }
+    startAdminSSE();
 }
+
+// ==================== Admin: Real-time Notifications (SSE) ====================
+
+function startAdminSSE() {
+    if (adminSSESource) return;
+    try {
+        adminSSESource = new EventSource(`${API_BASE}/admin/notifications/stream`);
+        adminSSESource.addEventListener('new_account', (e) => {
+            const payload = JSON.parse(e.data);
+            addAdminNotification(payload);
+        });
+        adminSSESource.onerror = () => {};
+    } catch (err) {
+        console.warn('SSE not available:', err);
+    }
+}
+
+function stopAdminSSE() {
+    if (adminSSESource) { adminSSESource.close(); adminSSESource = null; }
+}
+
+function addAdminNotification(payload) {
+    adminNotifications.unshift(payload);
+    renderAdminNotifications();
+    const roleIcon = payload.role === 'volunteer' ? '🤝' : payload.role === 'admin' ? '⚙️' : '👤';
+    showToast(`${roleIcon} New ${payload.role} account: ${payload.name || 'Unknown'}`, 'info');
+}
+
+function renderAdminNotifications() {
+    const badge = document.getElementById('adminNotifBadge');
+    const list = document.getElementById('adminNotifList');
+    if (!badge || !list) return;
+    const count = adminNotifications.length;
+    if (count > 0) {
+        badge.classList.remove('hidden');
+        badge.textContent = count > 99 ? '99+' : count;
+    } else {
+        badge.classList.add('hidden');
+    }
+    if (count === 0) {
+        list.innerHTML = '<p class="text-gray-400 text-sm p-4 text-center">No notifications yet</p>';
+        return;
+    }
+    list.innerHTML = adminNotifications.map(n => {
+        const time = new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const roleIcon = n.role === 'volunteer' ? '🤝' : n.role === 'admin' ? '⚙️' : '👤';
+        return `<div class="p-3">
+            <div class="flex items-center gap-2">
+                <span class="text-lg">${roleIcon}</span>
+                <div>
+                    <p class="text-sm font-semibold text-gray-800">${n.name || 'Unknown'}</p>
+                    <p class="text-xs text-gray-400">${n.role} · ${time}</p>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function toggleAdminNotificationPanel() {
+    const panel = document.getElementById('adminNotifPanel');
+    if (panel) panel.classList.toggle('hidden');
+}
+
+function clearAdminNotifications() {
+    adminNotifications = [];
+    renderAdminNotifications();
+    const panel = document.getElementById('adminNotifPanel');
+    if (panel) panel.classList.add('hidden');
+}
+
+// ==================== Admin: Volunteer Management ====================
+
+async function loadAdminVolunteers() {
+    const container = document.getElementById('adminVolunteerList');
+    if (!container) return;
+    container.innerHTML = '<p class="text-gray-400 text-center py-8">Loading...</p>';
+    try {
+        const res = await fetch(`${API_BASE}/admin/volunteers`);
+        const data = await res.json();
+        if (!res.ok) { container.innerHTML = `<p class="text-red-500 p-4">${data.error}</p>`; return; }
+        const volunteers = data.volunteers || [];
+        if (volunteers.length === 0) {
+            container.innerHTML = '<p class="text-gray-400 text-center py-8">No volunteers yet. Add one above.</p>';
+            return;
+        }
+        container.innerHTML = `
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="bg-gray-50 text-gray-500 uppercase text-xs">
+                        <th class="px-4 py-3 text-left rounded-l-lg">#</th>
+                        <th class="px-4 py-3 text-left">Name</th>
+                        <th class="px-4 py-3 text-left">ID</th>
+                        <th class="px-4 py-3 text-right rounded-r-lg">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    ${volunteers.map((v, i) => `
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-4 py-3 text-gray-400">${i + 1}</td>
+                        <td class="px-4 py-3 font-semibold text-gray-800">🤝 ${v.dummy_name || 'Unnamed'}</td>
+                        <td class="px-4 py-3 text-gray-400 font-mono text-xs">${v.id}</td>
+                        <td class="px-4 py-3 text-right">
+                            <button onclick="adminRemoveVolunteer('${v.id}', '${v.dummy_name}')" class="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1 rounded-lg text-xs font-semibold transition-all">🗑 Remove</button>
+                        </td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>`;
+    } catch (err) {
+        container.innerHTML = '<p class="text-red-500 p-4">Error loading volunteers.</p>';
+    }
+}
+
+async function adminAddVolunteer() {
+    const name = document.getElementById('newVolName')?.value?.trim();
+    const email = document.getElementById('newVolEmail')?.value?.trim();
+    const password = document.getElementById('newVolPassword')?.value?.trim();
+    if (!name || !email || !password) { showToast('Please fill in all fields.', 'error'); return; }
+    try {
+        const res = await fetch(`${API_BASE}/admin/volunteers`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, password })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`Volunteer ${name} added successfully!`, 'success');
+            document.getElementById('newVolName').value = '';
+            document.getElementById('newVolEmail').value = '';
+            document.getElementById('newVolPassword').value = '';
+            loadAdminVolunteers();
+        } else {
+            showToast(data.error || 'Failed to add volunteer.', 'error');
+        }
+    } catch (err) {
+        showToast('Error adding volunteer.', 'error');
+    }
+}
+
+async function adminRemoveVolunteer(volunteerId, name) {
+    if (!confirm(`Remove volunteer "${name}"? This cannot be undone.`)) return;
+    try {
+        const res = await fetch(`${API_BASE}/admin/volunteers/${volunteerId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`Volunteer ${name} removed.`, 'success');
+            loadAdminVolunteers();
+        } else {
+            showToast(data.error || 'Failed to remove volunteer.', 'error');
+        }
+    } catch (err) {
+        showToast('Error removing volunteer.', 'error');
+    }
+}
+
+// ==================== Admin: Volunteer Rankings ====================
+
+async function loadVolunteerRankings() {
+    const container = document.getElementById('adminRankingsList');
+    if (!container) return;
+    container.innerHTML = '<p class="text-gray-400 text-center py-8">Calculating rankings...</p>';
+    try {
+        const res = await fetch(`${API_BASE}/admin/volunteer-rankings`);
+        const data = await res.json();
+        if (!res.ok) { container.innerHTML = `<p class="text-red-500 p-4">${data.error}</p>`; return; }
+        const rankings = data.rankings || [];
+        if (rankings.length === 0) {
+            container.innerHTML = '<p class="text-gray-400 text-center py-8">No volunteers to rank yet.</p>';
+            return;
+        }
+        const badgeColors = {
+            green: 'bg-green-100 text-green-700',
+            yellow: 'bg-yellow-100 text-yellow-700',
+            red: 'bg-red-100 text-red-700',
+            grey: 'bg-gray-100 text-gray-500'
+        };
+        const rankIcons = ['🥇', '🥈', '🥉'];
+        container.innerHTML = `
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="bg-gray-50 text-gray-500 uppercase text-xs">
+                        <th class="px-4 py-3 text-left rounded-l-lg">Rank</th>
+                        <th class="px-4 py-3 text-left">Volunteer</th>
+                        <th class="px-4 py-3 text-center">Students</th>
+                        <th class="px-4 py-3 text-center">👍 Positive</th>
+                        <th class="px-4 py-3 text-center">👎 Negative</th>
+                        <th class="px-4 py-3 text-center">Score</th>
+                        <th class="px-4 py-3 text-center rounded-r-lg">Rating</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    ${rankings.map((r, i) => {
+                        const icon = rankIcons[i] || `#${i + 1}`;
+                        const scoreDisplay = r.score !== null ? r.score + '%' : '—';
+                        const badgeCls = badgeColors[r.badge] || badgeColors.grey;
+                        return `<tr class="hover:bg-gray-50 transition-colors">
+                            <td class="px-4 py-3 text-xl">${icon}</td>
+                            <td class="px-4 py-3 font-semibold text-gray-800">🤝 ${r.name || 'Unknown'}</td>
+                            <td class="px-4 py-3 text-center text-gray-600">${r.students_helped}</td>
+                            <td class="px-4 py-3 text-center text-green-600 font-semibold">${r.positive_impacts}</td>
+                            <td class="px-4 py-3 text-center text-red-500 font-semibold">${r.negative_impacts}</td>
+                            <td class="px-4 py-3 text-center font-bold text-gray-800">${scoreDisplay}</td>
+                            <td class="px-4 py-3 text-center"><span class="px-3 py-1 rounded-full text-xs font-bold ${badgeCls}">${r.label}</span></td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>`;
+    } catch (err) {
+        container.innerHTML = '<p class="text-red-500 p-4">Error loading rankings.</p>';
+    }
+}
+
 
 function loadMoodDistributionChart(moodDistribution) {
     const ctx = document.getElementById('moodDistributionChart');

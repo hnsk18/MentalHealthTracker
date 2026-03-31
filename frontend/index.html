@@ -713,39 +713,110 @@
         <!-- Admin Dashboard -->
         <div id="admin-dashboard" class="page-section hidden">
             <div class="max-w-6xl mx-auto px-4 py-8">
-                <h2 class="text-4xl font-bold text-orange-600 mb-8">Admin Dashboard ⚙️</h2>
 
-                <!-- Analytics Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div class="bg-white rounded-2xl shadow-lg p-6 text-center">
-                        <p class="text-gray-600 mb-2">Total Users</p>
-                        <p id="adminTotalUsers" class="text-4xl font-bold text-indigo-600">0</p>
-                    </div>
-                    <div class="bg-white rounded-2xl shadow-lg p-6 text-center">
-                        <p class="text-gray-600 mb-2">Mood Entries</p>
-                        <p id="adminMoodEntries" class="text-4xl font-bold text-green-600">0</p>
-                    </div>
-                    <div class="bg-white rounded-2xl shadow-lg p-6 text-center">
-                        <p class="text-gray-600 mb-2">Quiz Attempts</p>
-                        <p id="adminQuizAttempts" class="text-4xl font-bold text-blue-600">0</p>
-                    </div>
-                    <div class="bg-white rounded-2xl shadow-lg p-6 text-center">
-                        <p class="text-gray-600 mb-2">Avg Stress Level</p>
-                        <p id="adminAvgStress" class="text-4xl font-bold text-red-600">-</p>
+                <!-- Header with notification bell -->
+                <div class="flex items-center justify-between mb-8">
+                    <h2 class="text-4xl font-bold text-orange-600">Admin Dashboard ⚙️</h2>
+                    <div class="relative">
+                        <button onclick="toggleAdminNotificationPanel()" class="relative p-3 bg-white rounded-full shadow-lg hover:shadow-xl transition-all">
+                            <span class="text-2xl">🔔</span>
+                            <span id="adminNotifBadge" class="absolute -top-1 -right-1 hidden bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">0</span>
+                        </button>
+                        <!-- Notification Panel -->
+                        <div id="adminNotifPanel" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50">
+                            <div class="flex items-center justify-between p-4 border-b">
+                                <h4 class="font-bold text-gray-800">New Account Alerts</h4>
+                                <button onclick="clearAdminNotifications()" class="text-xs text-gray-400 hover:text-red-500">Clear all</button>
+                            </div>
+                            <div id="adminNotifList" class="max-h-64 overflow-y-auto divide-y divide-gray-50">
+                                <p class="text-gray-400 text-sm p-4 text-center">No notifications yet</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Charts -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div class="bg-white rounded-2xl shadow-lg p-8">
-                        <h3 class="text-2xl font-bold text-gray-800 mb-6">Mood Distribution</h3>
-                        <canvas id="moodDistributionChart"></canvas>
+                <!-- Tab Navigation -->
+                <div class="flex gap-2 mb-8 border-b border-gray-200">
+                    <button onclick="switchAdminTab('analytics')" id="adminTab-analytics" class="admin-tab-btn px-5 py-2 rounded-t-lg font-semibold text-sm transition-all bg-orange-500 text-white">📊 Analytics</button>
+                    <button onclick="switchAdminTab('volunteers')" id="adminTab-volunteers" class="admin-tab-btn px-5 py-2 rounded-t-lg font-semibold text-sm transition-all bg-gray-100 text-gray-600 hover:bg-gray-200">🧑‍💼 Manage Volunteers</button>
+                    <button onclick="switchAdminTab('rankings')" id="adminTab-rankings" class="admin-tab-btn px-5 py-2 rounded-t-lg font-semibold text-sm transition-all bg-gray-100 text-gray-600 hover:bg-gray-200">🏆 Volunteer Rankings</button>
+                </div>
+
+                <!-- TAB: Analytics -->
+                <div id="adminTabContent-analytics">
+                    <!-- Analytics Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                        <div class="bg-white rounded-2xl shadow-lg p-6 text-center">
+                            <p class="text-gray-600 mb-2">Total Users</p>
+                            <p id="adminTotalUsers" class="text-4xl font-bold text-indigo-600">0</p>
+                        </div>
+                        <div class="bg-white rounded-2xl shadow-lg p-6 text-center">
+                            <p class="text-gray-600 mb-2">Mood Entries</p>
+                            <p id="adminMoodEntries" class="text-4xl font-bold text-green-600">0</p>
+                        </div>
+                        <div class="bg-white rounded-2xl shadow-lg p-6 text-center">
+                            <p class="text-gray-600 mb-2">Quiz Attempts</p>
+                            <p id="adminQuizAttempts" class="text-4xl font-bold text-blue-600">0</p>
+                        </div>
+                        <div class="bg-white rounded-2xl shadow-lg p-6 text-center">
+                            <p class="text-gray-600 mb-2">Avg Stress Level</p>
+                            <p id="adminAvgStress" class="text-4xl font-bold text-red-600">-</p>
+                        </div>
                     </div>
-                    <div class="bg-white rounded-2xl shadow-lg p-8">
-                        <h3 class="text-2xl font-bold text-gray-800 mb-6">Users by Role</h3>
-                        <canvas id="roleDistributionChart"></canvas>
+                    <!-- Charts -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h3 class="text-2xl font-bold text-gray-800 mb-6">Mood Distribution</h3>
+                            <canvas id="moodDistributionChart"></canvas>
+                        </div>
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h3 class="text-2xl font-bold text-gray-800 mb-6">Users by Role</h3>
+                            <canvas id="roleDistributionChart"></canvas>
+                        </div>
                     </div>
                 </div>
+
+                <!-- TAB: Manage Volunteers -->
+                <div id="adminTabContent-volunteers" class="hidden">
+                    <!-- Add Volunteer Form -->
+                    <div class="bg-white rounded-2xl shadow-lg p-6 mb-8">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">➕ Add New Volunteer</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <input id="newVolName" type="text" placeholder="Full Name" class="border border-gray-300 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-orange-400" />
+                            <input id="newVolEmail" type="email" placeholder="Email Address" class="border border-gray-300 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-orange-400" />
+                            <input id="newVolPassword" type="password" placeholder="Password" class="border border-gray-300 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-orange-400" />
+                        </div>
+                        <button onclick="adminAddVolunteer()" class="mt-4 bg-orange-500 hover:bg-orange-600 text-white font-semibold px-6 py-2 rounded-xl transition-all">Add Volunteer</button>
+                    </div>
+
+                    <!-- Volunteer List -->
+                    <div class="bg-white rounded-2xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">👥 Current Volunteers</h3>
+                        <div id="adminVolunteerList">
+                            <p class="text-gray-400 text-center py-8">Loading volunteers...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: Volunteer Rankings -->
+                <div id="adminTabContent-rankings" class="hidden">
+                    <div class="bg-white rounded-2xl shadow-lg p-6">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="text-xl font-bold text-gray-800">🏆 Volunteer Impact Rankings</h3>
+                            <button onclick="loadVolunteerRankings()" class="text-sm bg-orange-100 hover:bg-orange-200 text-orange-700 px-4 py-1.5 rounded-lg transition-all">🔄 Refresh</button>
+                        </div>
+                        <div class="flex gap-4 mb-6 text-sm">
+                            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span> Excellent (score ≥ 50)</span>
+                            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-yellow-400 inline-block"></span> Good (score 0–49)</span>
+                            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-red-400 inline-block"></span> Needs Improvement (score &lt; 0)</span>
+                            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-gray-300 inline-block"></span> No Data</span>
+                        </div>
+                        <div id="adminRankingsList">
+                            <p class="text-gray-400 text-center py-8">Loading rankings...</p>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>

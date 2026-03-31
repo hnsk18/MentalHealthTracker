@@ -46,6 +46,16 @@ const secure_chat_db = {}; // { "userId:volunteerId": [messages] }
 
 const getSecureConversationKey = (userId, volunteerId) => `${userId}:${volunteerId}`;
 
+// SSE clients for admin real-time notifications
+const adminSSEClients = new Set();
+
+function broadcastAdminNotification(event, payload) {
+  const msg = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+  for (const client of adminSSEClients) {
+    try { client.write(msg); } catch (_) { adminSSEClients.delete(client); }
+  }
+}
+
 const QUIZ_QUESTIONS = [
   { id: 1, question: 'How often do you feel stressed?', options: ['Never', 'Rarely', 'Sometimes', 'Often', 'Always'], weight: [0, 1, 2, 3, 4] },
   { id: 2, question: 'How many hours do you sleep on average?', options: ['Less than 5', '5-6', '6-7', '7-8', 'More than 8'], weight: [4, 3, 2, 0, 1] },
@@ -400,6 +410,14 @@ app.post('/api/register', async (req, res) => {
     quiz_responses_db[userId] = [];
     messages_db[userId] = [];
     volunteer_requests_db[userId] = null;
+
+    // Notify connected admin dashboards in real-time
+    broadcastAdminNotification('new_account', {
+      user_id: userId,
+      name,
+      role,
+      created_at: new Date().toISOString()
+    });
 
     return res.status(201).json({ success: true, user_id: userId, message: 'Registration successful' });
   } catch (err) {
@@ -1024,6 +1042,227 @@ app.get('/api/music-recommendation/:mood', (req, res) => {
 });
 
 // ==================== Admin ====================
+
+// SSE: Real-time notifications stream for admin
+app.get('/api/admin/notifications/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  // Send a heartbeat every 25s to keep connection alive
+  const heartbeat = setInterval(() => {
+    try { res.write(':heartbeat\n\n'); } catch (_) {}
+  }, 25000);
+
+  adminSSEClients.add(res);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    adminSSEClients.delete(res);
+  });
+});
+
+// GET /api/admin/volunteers — list all volunteers
+app.get('/api/admin/volunteers', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, dummy_name, role')
+      .eq('role', 'volunteer');
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ volunteers: data || [] });
+  } catch (err) {
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/admin/volunteers — add a new volunteer
+app.post('/api/admin/volunteers', async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: 'email, password, and name are required' });
+    }
+
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true
+    });
+
+    if (authError || !authData.user) {
+      return res.status(400).json({ error: authError ? authError.message : 'Could not create user' });
+    }
+
+    const userId = authData.user.id;
+    const { error: insertError } = await supabase.from('users').insert([{
+      id: userId,
+      dummy_name: name,
+      role: 'volunteer'
+    }]);
+
+    if (insertError) return res.status(400).json({ error: insertError.message });
+
+    moods_db[userId] = [];
+    quiz_responses_db[userId] = [];
+    messages_db[userId] = [];
+    volunteer_requests_db[userId] = null;
+
+    return res.status(201).json({ success: true, volunteer: { id: userId, name, email } });
+  } catch (err) {
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/volunteers/:id — remove a volunteer
+app.delete('/api/admin/volunteers/:id', async (req, res) => {
+  try {
+    const volunteerId = req.params.id;
+
+    const { error: deleteUserErr } = await supabase.from('users').delete().eq('id', volunteerId);
+    if (deleteUserErr) return res.status(500).json({ error: deleteUserErr.message });
+
+    const { error: deleteAuthErr } = await supabase.auth.admin.deleteUser(volunteerId);
+    if (deleteAuthErr) return res.status(500).json({ error: deleteAuthErr.message });
+
+    return res.status(200).json({ success: true, message: 'Volunteer removed' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/admin/volunteer-rankings — rank volunteers by student impact
+app.get('/api/admin/volunteer-rankings', async (req, res) => {
+  try {
+    const POSITIVE_MOODS = new Set(['happy', 'calm', 'content', 'hopeful', 'relaxed', 'joyful', 'grateful', 'excited']);
+    const NEGATIVE_MOODS = new Set(['sad', 'anxious', 'stressed', 'overwhelmed', 'angry', 'scared', 'depressed', 'worried']);
+
+    // 1. Get all volunteers
+    const { data: volunteers, error: vErr } = await supabase
+      .from('users')
+      .select('id, dummy_name')
+      .eq('role', 'volunteer');
+    if (vErr) return res.status(500).json({ error: vErr.message });
+
+    // 2. Get all assignment control messages to know who was assigned to whom and when
+    const { data: ctrlMsgs, error: ctrlErr } = await supabase
+      .from('volunteer_chats')
+      .select('user_id, volunteer_id, message, created_at')
+      .in('message', ['__CTRL__:ASSIGNED', '__CTRL__:RELEASED'])
+      .order('created_at', { ascending: true });
+    if (ctrlErr) return res.status(500).json({ error: ctrlErr.message });
+
+    // Build assignment windows per (volunteer, user): [{start, end|null}]
+    const assignmentWindows = {}; // key: 'volunteerId:userId' -> [{start, end}]
+    const openAssignments = {}; // key: 'volunteerId:userId' -> start timestamp
+
+    for (const msg of (ctrlMsgs || [])) {
+      const key = msg.volunteer_id + ':' + msg.user_id;
+      if (msg.message === '__CTRL__:ASSIGNED') {
+        openAssignments[key] = msg.created_at;
+      } else if (msg.message === '__CTRL__:RELEASED') {
+        if (!assignmentWindows[key]) assignmentWindows[key] = [];
+        assignmentWindows[key].push({
+          start: openAssignments[key] || msg.created_at,
+          end: msg.created_at
+        });
+        delete openAssignments[key];
+      }
+    }
+    // Close still-open assignments with now as end
+    for (const [key, start] of Object.entries(openAssignments)) {
+      if (!assignmentWindows[key]) assignmentWindows[key] = [];
+      assignmentWindows[key].push({ start, end: new Date().toISOString() });
+    }
+
+    // 3. Get all mood logs
+    const { data: moodLogs, error: moodErr } = await supabase
+      .from('mood_logs')
+      .select('user_id, mood, created_at')
+      .order('created_at', { ascending: true });
+    if (moodErr) return res.status(500).json({ error: moodErr.message });
+
+    // 4. Score each volunteer
+    const rankings = [];
+
+    for (const vol of (volunteers || [])) {
+      let positiveImpacts = 0;
+      let negativeImpacts = 0;
+      let neutralImpacts = 0;
+      const studentsSet = new Set();
+
+      // Find all assignment windows for this volunteer
+      for (const [key, windows] of Object.entries(assignmentWindows)) {
+        if (!key.startsWith(vol.id + ':')) continue;
+        const userId = key.split(':')[1];
+        studentsSet.add(userId);
+
+        for (const window of windows) {
+          // Find moods just before and just after the assignment window
+          const userMoods = (moodLogs || []).filter(m => m.user_id === userId);
+
+          const before = userMoods.filter(m => new Date(m.created_at) < new Date(window.start)).slice(-1)[0];
+          const after = userMoods.filter(m => new Date(m.created_at) > new Date(window.start))[0];
+
+          if (!before || !after) { neutralImpacts++; continue; }
+
+          const beforePos = POSITIVE_MOODS.has(before.mood?.toLowerCase());
+          const beforeNeg = NEGATIVE_MOODS.has(before.mood?.toLowerCase());
+          const afterPos = POSITIVE_MOODS.has(after.mood?.toLowerCase());
+          const afterNeg = NEGATIVE_MOODS.has(after.mood?.toLowerCase());
+
+          // Improved: was negative, now positive
+          if (beforeNeg && afterPos) positiveImpacts++;
+          // Worsened: was positive, now negative
+          else if (beforePos && afterNeg) negativeImpacts++;
+          // Both negative but stayed: slight negative
+          else if (beforeNeg && afterNeg) negativeImpacts++;
+          // Both positive: maintained positive
+          else if (beforePos && afterPos) positiveImpacts++;
+          else neutralImpacts++;
+        }
+      }
+
+      const total = positiveImpacts + negativeImpacts + neutralImpacts;
+      const score = total > 0 ? Math.round(((positiveImpacts - negativeImpacts) / total) * 100) : null;
+
+      let label = 'No Data';
+      let badge = 'grey';
+      if (score !== null) {
+        if (score >= 50) { label = 'Excellent'; badge = 'green'; }
+        else if (score >= 0) { label = 'Good'; badge = 'yellow'; }
+        else { label = 'Needs Improvement'; badge = 'red'; }
+      }
+
+      rankings.push({
+        volunteer_id: vol.id,
+        name: vol.dummy_name,
+        students_helped: studentsSet.size,
+        positive_impacts: positiveImpacts,
+        negative_impacts: negativeImpacts,
+        neutral_impacts: neutralImpacts,
+        score,
+        label,
+        badge
+      });
+    }
+
+    // Sort: highest score first, nulls last
+    rankings.sort((a, b) => {
+      if (a.score === null && b.score === null) return 0;
+      if (a.score === null) return 1;
+      if (b.score === null) return -1;
+      return b.score - a.score;
+    });
+
+    return res.status(200).json({ rankings });
+  } catch (err) {
+    console.error('Ranking error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
 
 app.get('/api/admin/analytics', async (req, res) => {
   try {
