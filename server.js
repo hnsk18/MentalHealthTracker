@@ -555,7 +555,7 @@ app.get('/api/feed/posts', async (req, res) => {
     if (userIds.length) {
       const { data: users, error: usersError } = await supabase
         .from('users')
-        .select('id, name, dummy_name, role')
+        .select('id, dummy_name, role')
         .in('id', userIds);
 
       if (usersError) return res.status(500).json({ error: usersError.message });
@@ -580,7 +580,7 @@ app.get('/api/feed/posts', async (req, res) => {
       if (commentUserIds.length) {
         const { data: commentUsers, error: commentUsersError } = await supabase
           .from('users')
-          .select('id, name, dummy_name, role')
+          .select('id, dummy_name, role')
           .in('id', commentUserIds);
         if (commentUsersError) return res.status(500).json({ error: commentUsersError.message });
         commentUsersById = (commentUsers || []).reduce((acc, u) => {
