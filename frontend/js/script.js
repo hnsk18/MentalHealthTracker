@@ -679,7 +679,8 @@ async function submitFeelingPost() {
 
     await loadCommunityPosts();
     renderCommunityFeed();
-    showToast('Your feeling was posted anonymously.', 'success');
+    const postedAs = currentUser.role === 'volunteer' ? 'Volunteer' : 'Anonymous User';
+    showToast(`Your post was published as ${postedAs}.`, 'success');
 }
 
 async function addCommentToPost(postId) {
@@ -717,6 +718,20 @@ function seedCommunityPosts() {
     showToast('Sample seeding is disabled in database mode. Create a real post instead.', 'info');
 }
 
+function normalizeFeedAuthor(entity) {
+    const role = entity && entity.role === 'volunteer' ? 'volunteer' : 'user';
+    const displayName = (entity && (entity.displayName || entity.petName))
+        || (role === 'volunteer' ? 'Volunteer' : 'Anonymous Friend');
+    return { role, displayName };
+}
+
+function getRoleBadge(role) {
+    if (role === 'volunteer') {
+        return '<span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">Volunteer</span>';
+    }
+    return '<span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">Anonymous User</span>';
+}
+
 function renderCommunityFeed() {
     const container = document.getElementById('communityFeed');
     if (!container) return;
@@ -727,10 +742,15 @@ function renderCommunityFeed() {
     }
 
     container.innerHTML = communityPosts.map(post => {
+        const postAuthor = normalizeFeedAuthor(post);
         const commentsHtml = post.comments.length
             ? post.comments.map(comment => `
                 <div class="bg-indigo-50 rounded-lg px-3 py-2">
-                    <p class="text-sm text-gray-700"><span class="font-semibold text-indigo-700">${escapeHtml(comment.petName)}</span>: ${escapeHtml(comment.text)}</p>
+                    <div class="flex items-center gap-2 mb-1">
+                        <p class="text-sm text-gray-700"><span class="font-semibold text-indigo-700">${escapeHtml(normalizeFeedAuthor(comment).displayName)}</span></p>
+                        ${getRoleBadge(normalizeFeedAuthor(comment).role)}
+                    </div>
+                    <p class="text-sm text-gray-700">${escapeHtml(comment.text)}</p>
                     <p class="text-xs text-gray-500 mt-1">${formatPostTime(comment.timestamp)}</p>
                 </div>
             `).join('')
@@ -740,10 +760,10 @@ function renderCommunityFeed() {
             <div class="border border-gray-200 rounded-2xl p-5 bg-gradient-to-br from-white to-indigo-50/40">
                 <div class="flex justify-between items-start gap-4 mb-3">
                     <div>
-                        <p class="font-bold text-indigo-700">${escapeHtml(post.petName)}</p>
+                        <p class="font-bold text-indigo-700">${escapeHtml(postAuthor.displayName)}</p>
                         <p class="text-xs text-gray-500">${formatPostTime(post.timestamp)}</p>
                     </div>
-                    <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">Anonymous</span>
+                    ${getRoleBadge(postAuthor.role)}
                 </div>
                 <p class="text-gray-800 leading-relaxed mb-4">${escapeHtml(post.text)}</p>
                 <div class="space-y-2 mb-3">${commentsHtml}</div>
@@ -791,9 +811,10 @@ async function requestVolunteerSupport(prefilledNote = null) {
             if (data.already_requested) {
                 showToast('Your volunteer request is already open.', 'info');
             } else {
-                showToast('Volunteer request sent successfully.', 'success');
+                const volStr = data.volunteer_name ? ` with ${data.volunteer_name}` : '';
+                showToast(`Volunteer request sent successfully${volStr}.`, 'success');
             }
-            setVolunteerRequestUIState(true, data.request || { requested_at: new Date().toISOString() });
+            setVolunteerRequestUIState(true, data.request || { requested_at: new Date().toISOString(), volunteer_name: data.volunteer_name });
         } else {
             showToast(data.error || 'Could not submit volunteer request.', 'error');
         }
@@ -813,8 +834,9 @@ function setVolunteerRequestUIState(isRequested, requestData = null) {
         const requestedAt = requestData && requestData.requested_at
             ? formatPostTime(requestData.requested_at)
             : 'recently';
+        const volStr = requestData && requestData.volunteer_name ? ` with ${requestData.volunteer_name}` : '';
         statusEl.classList.remove('hidden');
-        statusEl.textContent = `Volunteer request already active (requested ${requestedAt}).`;
+        statusEl.textContent = `Volunteer request active${volStr} (requested ${requestedAt}).`;
         btn.disabled = true;
         btn.classList.add('opacity-60', 'cursor-not-allowed');
         btn.classList.remove('hover:from-purple-700', 'hover:to-indigo-700');
@@ -1841,7 +1863,7 @@ async function loadVolunteerDashboard() {
     await loadVolunteerHandlingUsers();
 
     try {
-        const response = await fetch(`${API_BASE}/volunteer/users-needing-help`);
+        const response = await fetch(`${API_BASE}/volunteer/users-needing-help/${currentUser.user_id}`);
         const data = await response.json();
         if (response.ok) {
             latestUsersNeedingHelp = data.users || [];
@@ -2322,10 +2344,15 @@ function renderVolunteerCommunityFeed() {
     }
 
     container.innerHTML = communityPosts.map(post => {
+        const postAuthor = normalizeFeedAuthor(post);
         const comments = post.comments && post.comments.length
             ? post.comments.map(comment => `
                 <div class="bg-purple-50 rounded-lg px-3 py-2">
-                    <p class="text-sm text-gray-700"><span class="font-semibold text-purple-700">${escapeHtml(comment.petName)}</span>: ${escapeHtml(comment.text)}</p>
+                    <div class="flex items-center gap-2 mb-1">
+                        <p class="text-sm text-gray-700"><span class="font-semibold text-purple-700">${escapeHtml(normalizeFeedAuthor(comment).displayName)}</span></p>
+                        ${getRoleBadge(normalizeFeedAuthor(comment).role)}
+                    </div>
+                    <p class="text-sm text-gray-700">${escapeHtml(comment.text)}</p>
                 </div>
             `).join('')
             : '<p class="text-sm text-gray-500">No replies yet.</p>';
@@ -2333,8 +2360,11 @@ function renderVolunteerCommunityFeed() {
         return `
             <div class="border border-gray-200 rounded-xl p-4">
                 <div class="flex justify-between items-start mb-2">
-                    <p class="font-semibold text-indigo-700">${escapeHtml(post.petName)}</p>
-                    <p class="text-xs text-gray-500">${formatPostTime(post.timestamp)}</p>
+                    <div>
+                        <p class="font-semibold text-indigo-700">${escapeHtml(postAuthor.displayName)}</p>
+                        <p class="text-xs text-gray-500">${formatPostTime(post.timestamp)}</p>
+                    </div>
+                    ${getRoleBadge(postAuthor.role)}
                 </div>
                 <p class="text-gray-800 mb-3">${escapeHtml(post.text)}</p>
                 <div class="space-y-2 mb-3">${comments}</div>
