@@ -1722,6 +1722,7 @@ app.get('/api/admin/analytics', async (req, res) => {
 
 const VOLUNTEER_CTRL_ASSIGN = '__CTRL__:ASSIGNED';
 const VOLUNTEER_CTRL_RELEASE = '__CTRL__:RELEASED';
+const VOLUNTEER_CTRL_PENDING = '__CTRL__:PENDING_REQUEST';
 
 function parseStressLevel(avg) {
   if (avg < 1.5) return 'Low';
@@ -1802,13 +1803,84 @@ async function getAssignmentSnapshot() {
   return { byUser, byVolunteer };
 }
 
-app.get('/api/volunteer/users-needing-help', async (req, res) => {
+async function getPendingRequestsSnapshot() {
+  const { data, error } = await supabase
+    .from('volunteer_chats')
+    .select('user_id, volunteer_id, message, created_at')
+    .in('message', [VOLUNTEER_CTRL_ASSIGN, VOLUNTEER_CTRL_RELEASE, VOLUNTEER_CTRL_PENDING])
+    .order('created_at', { ascending: true });
+
+  if (error || !data) return {};
+
+  const pendingByUser = {}; // user_id -> { volunteer_id, requested_at }
+  
+  for (const row of data) {
+    if (row.message === VOLUNTEER_CTRL_PENDING) {
+      pendingByUser[row.user_id] = { volunteer_id: row.volunteer_id, requested_at: row.created_at };
+    }
+    if (row.message === VOLUNTEER_CTRL_ASSIGN || row.message === VOLUNTEER_CTRL_RELEASE) {
+      delete pendingByUser[row.user_id];
+    }
+  }
+  return pendingByUser;
+}
+
+async function matchVolunteerToUser(userId) {
+  const { data: volunteers } = await supabase
+    .from('users')
+    .select('id, dummy_name, expertise')
+    .eq('role', 'volunteer')
+    .eq('approval_status', 'approved');
+    
+  if (!volunteers || volunteers.length === 0) return null;
+
+  const { data: moods } = await supabase
+    .from('mood_logs')
+    .select('mood')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(5);
+    
+  const recentMoods = (moods || []).map(m => m.mood).join(', ');
+  
   try {
+    if (process.env.MISTRAL_API_KEY) {
+      const mistral = await getMistral();
+      const prompt = `Match the user to the best volunteer based on the user's recent moods: "${recentMoods}".
+      
+Volunteers:
+${volunteers.map(v => `- ID '${v.id}': ${v.dummy_name}, Expertise: ${v.expertise || 'None'}`).join('\n')}
+
+Return ONLY the exact ID of the best match. No text, no quotes, no explanation.`;
+
+      const response = await mistral.chat.complete({
+        model: 'mistral-small-latest',
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 10,
+        temperature: 0.1
+      });
+      
+      const idStr = response.choices[0].message.content.trim().replace(/['"]/g, '');
+      const match = volunteers.find(v => v.id === idStr || String(v.id) === idStr);
+      if (match) return { id: match.id, name: match.dummy_name };
+    }
+  } catch (e) {
+    console.warn('AI matching failed, using fallback.', e.message);
+  }
+  
+  const fallback = volunteers[Math.floor(Math.random() * volunteers.length)];
+  return { id: fallback.id, name: fallback.dummy_name };
+}
+
+app.get('/api/volunteer/users-needing-help/:volunteer_id', async (req, res) => {
+  try {
+    const volunteerId = req.params.volunteer_id;
     const users_needing_help = [];
     const includedIds = new Set();
 
     const assignments = await getAssignmentSnapshot();
     const assignedUsers = new Set(Object.keys(assignments.byUser).map((id) => `${id}`));
+    const pendingRequests = await getPendingRequestsSnapshot();
 
     const riskMap = await getQuizRiskByUser();
     const highRiskIds = Object.keys(riskMap).filter((uid) => riskMap[uid].stress_level === 'High');
@@ -1822,6 +1894,14 @@ app.get('/api/volunteer/users-needing-help', async (req, res) => {
 
       (highRiskUsers || []).forEach((u) => {
         if (assignedUsers.has(`${u.id}`)) return;
+        
+        const pending = pendingRequests[u.id];
+        if (pending && `${pending.volunteer_id}` !== `${volunteerId}`) {
+           const reqDate = pending.requested_at.endsWith('Z') ? pending.requested_at : pending.requested_at + 'Z';
+           const ageMs = Date.now() - new Date(reqDate).getTime();
+           if (ageMs < 15 * 60 * 1000) return; // Skip if waiting < 15 mins
+        }
+
         const risk = riskMap[u.id] || {};
         users_needing_help.push({
           user_id: u.id,
@@ -1845,6 +1925,14 @@ app.get('/api/volunteer/users-needing-help', async (req, res) => {
     (requestUsers || []).forEach((u) => {
       if (includedIds.has(`${u.id}`)) return;
       if (assignedUsers.has(`${u.id}`)) return;
+
+      const pending = pendingRequests[u.id];
+      if (pending && `${pending.volunteer_id}` !== `${volunteerId}`) {
+         const reqDate = pending.requested_at.endsWith('Z') ? pending.requested_at : pending.requested_at + 'Z';
+         const ageMs = Date.now() - new Date(reqDate).getTime();
+         if (ageMs < 15 * 60 * 1000) return; // Skip if waiting < 15 mins
+      }
+
       users_needing_help.push({
         user_id: u.id,
         name: u.dummy_name || 'Unknown',
@@ -1877,7 +1965,21 @@ app.post('/api/volunteer/request', async (req, res) => {
     .eq('id', user_id);
 
   if (error) return res.status(500).json({ error: error.message });
-  return res.status(201).json({ success: true, message: 'Volunteer support request submitted' });
+  
+  // AI Matching
+  const matchedVolunteer = await matchVolunteerToUser(user_id);
+  let assignedName = 'a volunteer';
+  if (matchedVolunteer) {
+    assignedName = matchedVolunteer.name;
+    await supabase.from('volunteer_chats').insert([{
+      user_id,
+      volunteer_id: matchedVolunteer.id,
+      sender: 'user',
+      message: VOLUNTEER_CTRL_PENDING
+    }]);
+  }
+
+  return res.status(201).json({ success: true, message: `Volunteer support request matched with ${assignedName}`, volunteer_name: assignedName, request: { volunteer_name: assignedName, requested_at: new Date().toISOString() } });
 });
 
 app.get('/api/volunteer/request/:user_id', async (req, res) => {
@@ -1889,12 +1991,21 @@ app.get('/api/volunteer/request/:user_id', async (req, res) => {
     return res.status(200).json({ requested: false });
   }
 
+  let assignedName = 'a volunteer';
+  const pendingMap = await getPendingRequestsSnapshot();
+  const pending = pendingMap[userId];
+  if (pending) {
+    const { data: v } = await supabase.from('users').select('dummy_name').eq('id', pending.volunteer_id).single();
+    if (v) assignedName = v.dummy_name;
+  }
+
   return res.status(200).json({
     requested: true,
     request: {
       requested_at: new Date().toISOString(),
       note: '',
-      status: 'open'
+      status: 'open',
+      volunteer_name: assignedName
     }
   });
 });
@@ -1995,7 +2106,7 @@ app.get('/api/volunteer/handling/:volunteer_id', async (req, res) => {
 
   const users = assigned.map((a) => ({
     user_id: a.user_id,
-    name: getAnonymousName(a.user_id),
+    name: profileMap[a.user_id] ? profileMap[a.user_id].dummy_name : 'Unknown',
     stress_level: riskMap[a.user_id] ? riskMap[a.user_id].stress_level : 'Unknown',
     assigned_at: a.assigned_at
   }));
@@ -2083,7 +2194,7 @@ app.get('/api/volunteer/user-profile/:volunteer_id/:user_id', async (req, res) =
   return res.status(200).json({
     user: {
       user_id: userCheck.profile.id,
-      name: getAnonymousName(userCheck.profile.id),
+      name: userCheck.profile.dummy_name || 'Unknown',
       role: userCheck.profile.role
     },
     request: hasOpenRequest

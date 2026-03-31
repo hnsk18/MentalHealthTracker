@@ -791,9 +791,10 @@ async function requestVolunteerSupport(prefilledNote = null) {
             if (data.already_requested) {
                 showToast('Your volunteer request is already open.', 'info');
             } else {
-                showToast('Volunteer request sent successfully.', 'success');
+                const volStr = data.volunteer_name ? ` with ${data.volunteer_name}` : '';
+                showToast(`Volunteer request sent successfully${volStr}.`, 'success');
             }
-            setVolunteerRequestUIState(true, data.request || { requested_at: new Date().toISOString() });
+            setVolunteerRequestUIState(true, data.request || { requested_at: new Date().toISOString(), volunteer_name: data.volunteer_name });
         } else {
             showToast(data.error || 'Could not submit volunteer request.', 'error');
         }
@@ -813,8 +814,9 @@ function setVolunteerRequestUIState(isRequested, requestData = null) {
         const requestedAt = requestData && requestData.requested_at
             ? formatPostTime(requestData.requested_at)
             : 'recently';
+        const volStr = requestData && requestData.volunteer_name ? ` with ${requestData.volunteer_name}` : '';
         statusEl.classList.remove('hidden');
-        statusEl.textContent = `Volunteer request already active (requested ${requestedAt}).`;
+        statusEl.textContent = `Volunteer request active${volStr} (requested ${requestedAt}).`;
         btn.disabled = true;
         btn.classList.add('opacity-60', 'cursor-not-allowed');
         btn.classList.remove('hover:from-purple-700', 'hover:to-indigo-700');
@@ -1772,7 +1774,7 @@ async function loadVolunteerDashboard() {
     await loadVolunteerHandlingUsers();
 
     try {
-        const response = await fetch(`${API_BASE}/volunteer/users-needing-help`);
+        const response = await fetch(`${API_BASE}/volunteer/users-needing-help/${currentUser.user_id}`);
         const data = await response.json();
         if (response.ok) {
             latestUsersNeedingHelp = data.users || [];

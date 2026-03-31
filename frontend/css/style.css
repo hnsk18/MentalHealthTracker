@@ -9,7 +9,8 @@
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     line-height: 1.6;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #F9F7F4;
+    color: #333333;
 }
 
 .page-section {
@@ -25,6 +26,7 @@ body {
         opacity: 0;
         transform: translateY(10px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -32,9 +34,12 @@ body {
 }
 
 @keyframes bounce-slow {
-    0%, 100% {
+
+    0%,
+    100% {
         transform: translateY(0);
     }
+
     50% {
         transform: translateY(-20px);
     }
@@ -84,7 +89,8 @@ body {
 
 .progress-bar-fill {
     height: 100%;
-    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    background: #325343;
+    border-radius: 4px;
     transition: width 0.3s ease;
 }
 
@@ -104,10 +110,10 @@ body {
 }
 
 .quiz-option.selected {
-    border-color: #667eea;
-    background-color: #667eea;
+    border-color: #325343;
+    background-color: #4a7c59;
     color: white;
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    box-shadow: 0 4px 12px rgba(50, 83, 67, 0.2);
 }
 
 /* Message Styles */
@@ -124,6 +130,7 @@ body {
         opacity: 0;
         transform: translateY(10px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -131,18 +138,18 @@ body {
 }
 
 .message.user {
-    background-color: #667eea;
+    background-color: #325343;
     color: white;
     margin-left: auto;
     border-radius: 1rem 0.25rem 1rem 1rem;
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 4px 12px rgba(50, 83, 67, 0.15);
 }
 
 .message.ai {
-    background-color: #f0f4ff;
+    background-color: #F0F4EC;
     color: #333;
     border-radius: 0.25rem 1rem 1rem 1rem;
-    border-left: 4px solid #667eea;
+    border-left: 4px solid #325343;
 }
 
 /* Button Styles */
@@ -154,7 +161,7 @@ button {
 }
 
 button:focus {
-    outline: 2px solid #667eea;
+    outline: 2px solid #325343;
     outline-offset: 2px;
 }
 
@@ -163,14 +170,18 @@ button:active {
 }
 
 /* Form Styles */
-input, select, textarea {
+input,
+select,
+textarea {
     font-family: inherit;
     transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-input:focus, select:focus, textarea:focus {
-    border-color: #667eea !important;
-    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1) !important;
+input:focus,
+select:focus,
+textarea:focus {
+    border-color: #325343 !important;
+    box-shadow: 0 0 0 4px rgba(50, 83, 67, 0.1) !important;
 }
 
 input::placeholder {
@@ -188,9 +199,9 @@ input::placeholder {
     display: inline-block;
     width: 20px;
     height: 20px;
-    border: 3px solid rgba(102, 126, 234, 0.3);
+    border: 3px solid rgba(50, 83, 67, 0.3);
     border-radius: 50%;
-    border-top-color: #667eea;
+    border-top-color: #325343;
     animation: spin 0.8s linear infinite;
 }
 
@@ -234,7 +245,7 @@ nav a::after {
     left: 0;
     width: 0;
     height: 2px;
-    background-color: #667eea;
+    background-color: #325343;
     transition: width 0.3s ease;
 }
 
@@ -293,6 +304,7 @@ nav a:hover::after {
         transform: translateX(400px);
         opacity: 0;
     }
+
     to {
         transform: translateX(0);
         opacity: 1;
@@ -300,32 +312,31 @@ nav a:hover::after {
 }
 
 /* Chart Container */
-#moodChart, #moodDistributionChart, #roleDistributionChart {
+#moodChart,
+#moodDistributionChart,
+#roleDistributionChart {
     position: relative;
 }
 
 /* Enhanced Gradients */
 .bg-gradient-custom {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #325343;
 }
 
 .text-gradient {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: #325343;
 }
 
 /* Color Theme */
 :root {
-    --primary: #667eea;
-    --secondary: #764ba2;
+    --primary: #325343;
+    --secondary: #4a7c59;
     --success: #10b981;
     --danger: #ef4444;
     --warning: #f59e0b;
     --info: #0ea5e9;
-    --light: #f5f5f5;
-    --dark: #1f2937;
+    --light: #F9F7F4;
+    --dark: #22372C;
 }
 
 /* Improved Card Hover Effects */
@@ -338,18 +349,21 @@ nav a:hover::after {
 }
 
 .premium-card:hover {
-    box-shadow: 0 20px 25px rgba(0, 0, 0, 0.1);
-    transform: translateY(-4px);
-    border-color: rgba(102, 126, 234, 0.2);
+    box-shadow: 0 15px 30px rgba(0, 0, 0, 0.08);
+    /* softer, wider shadow */
+    transform: translateY(-2px);
+    border-color: rgba(50, 83, 67, 0.1);
 }
 
 /* Subtle Backgrounds */
 .bg-subtle-purple {
-    background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+    background: #E8EDE9;
+    /* subtle sage */
 }
 
 .bg-subtle-blue {
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(37, 99, 235, 0.05) 100%);
+    background: #F0F4EC;
+    /* lighter warm green */
 }
 
 /* Enhanced Transitions */
@@ -359,9 +373,12 @@ nav a:hover::after {
 
 /* Pulse Animation */
 @keyframes pulse-subtle {
-    0%, 100% {
+
+    0%,
+    100% {
         opacity: 1;
     }
+
     50% {
         opacity: 0.8;
     }
@@ -397,11 +414,11 @@ textarea {
     width: 160px;
     height: 160px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #4a7c59;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 0 40px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 0 30px rgba(50, 83, 67, 0.2);
     transition: box-shadow 0.3s ease;
 }
 
@@ -420,22 +437,24 @@ textarea {
 @keyframes breathExpand {
     from {
         transform: scale(1);
-        box-shadow: 0 0 40px rgba(102, 126, 234, 0.3);
+        box-shadow: 0 0 30px rgba(50, 83, 67, 0.2);
     }
+
     to {
         transform: scale(1.6);
-        box-shadow: 0 0 80px rgba(102, 126, 234, 0.5), 0 0 120px rgba(118, 75, 162, 0.2);
+        box-shadow: 0 0 60px rgba(50, 83, 67, 0.3);
     }
 }
 
 @keyframes breathShrink {
     from {
         transform: scale(1.6);
-        box-shadow: 0 0 80px rgba(102, 126, 234, 0.5), 0 0 120px rgba(118, 75, 162, 0.2);
+        box-shadow: 0 0 60px rgba(50, 83, 67, 0.3);
     }
+
     to {
         transform: scale(1);
-        box-shadow: 0 0 40px rgba(102, 126, 234, 0.3);
+        box-shadow: 0 0 30px rgba(50, 83, 67, 0.2);
     }
 }
 
@@ -445,6 +464,7 @@ textarea {
         opacity: 0;
         transform: translateY(16px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -508,4 +528,3 @@ textarea {
 #volunteerRegFields {
     transition: all 0.3s ease;
 }
-
