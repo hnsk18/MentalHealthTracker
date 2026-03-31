@@ -121,11 +121,19 @@ document.addEventListener("DOMContentLoaded", () => {
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Processing...';
 
+        // Get user_id from parent window if available (quiz runs in iframe)
+        let userId = null;
+        try {
+            if (window.parent && window.parent.currentUser) {
+                userId = window.parent.currentUser.user_id;
+            }
+        } catch (e) { /* cross-origin or no parent */ }
+
         try {
             const response = await fetch('/api/submit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ answers: userAnswers })
+                body: JSON.stringify({ answers: userAnswers, user_id: userId })
             });
 
             if (!response.ok) throw new Error("Submission failed.");

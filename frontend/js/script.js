@@ -1815,7 +1815,7 @@ async function viewVolunteerUserProfile(userId) {
     if (!panel || !header || !content) return;
 
     panel.classList.remove('hidden');
-    header.textContent = 'User Profile Snapshot';
+    header.textContent = 'User Profile & Risk Report';
     content.innerHTML = '<p class="text-gray-500">Loading profile...</p>';
 
     try {
@@ -1832,6 +1832,9 @@ async function viewVolunteerUserProfile(userId) {
         const mood = data.mood || {};
         const quiz = data.quiz || {};
         const latestQuiz = quiz.latest || null;
+        const chatSessions = data.chat_sessions || [];
+        const aiSummaries = data.ai_summaries || [];
+        const overallRisk = data.overall_risk || { level: 'Low', factors: [] };
         const displayName = user.name || anonymizeUserLabel(user.user_id || userId);
 
         const moodCounts = mood.mood_counts || {};
@@ -1843,8 +1846,68 @@ async function viewVolunteerUserProfile(userId) {
             ? `Status: ${request.status}${request.requested_at ? ` | Requested: ${formatPostTime(request.requested_at)}` : ''}${request.note ? ` | Note: ${escapeHtml(request.note)}` : ''}`
             : 'No active volunteer request';
 
+        // Risk badge colors
+        const riskColors = { High: 'bg-red-100 text-red-700 border-red-300', Medium: 'bg-amber-100 text-amber-700 border-amber-300', Low: 'bg-green-100 text-green-700 border-green-300' };
+        const riskBadgeClass = riskColors[overallRisk.level] || riskColors.Low;
+        const riskFactorLabels = {
+            negative_mood: '😔 Negative mood logged',
+            high_quiz_stress: '📊 High quiz stress',
+            negative_chat_sentiment: '💬 Negative chat sentiment',
+            open_support_request: '🔴 Open support request'
+        };
+
+        // Chat session cards
+        const chatSessionsHtml = chatSessions.length
+            ? chatSessions.map(s => {
+                const sentimentColor = s.sentiment_score > 0.3 ? '#22c55e' : s.sentiment_score < -0.3 ? '#ef4444' : '#f59e0b';
+                const emotionTags = (s.emotion_tags || []).slice(0, 3).map(e => {
+                    const label = typeof e === 'string' ? e : (e.label || '');
+                    return `<span class="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600 mr-1">${escapeHtml(label)}</span>`;
+                }).join('');
+                return `<div class="bg-white border border-gray-200 rounded-lg p-3 mb-2">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="font-semibold text-sm text-gray-800">${escapeHtml(s.dominant_emotion || 'neutral')}</span>
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full" style="background: ${sentimentColor}20; color: ${sentimentColor};">Score: ${(s.sentiment_score || 0).toFixed(2)}</span>
+                    </div>
+                    <div class="mb-1">${emotionTags}</div>
+                    <p class="text-xs text-gray-500">${s.analyzed_at ? formatPostTime(s.analyzed_at) : ''}</p>
+                    ${s.transcript_preview ? `<p class="text-xs text-gray-400 mt-1 italic">"${escapeHtml(s.transcript_preview)}..."</p>` : ''}
+                </div>`;
+            }).join('')
+            : '<p class="text-sm text-gray-500">No chat sessions analyzed yet</p>';
+
+        // AI summaries cards
+        const aiSummariesHtml = aiSummaries.length
+            ? aiSummaries.map(s => {
+                const riskLabel = s.risk_level || s.category || 'Unknown';
+                const riskColor = riskLabel === 'Good' ? 'text-green-600' : riskLabel === 'Needs Support' ? 'text-red-600' : 'text-amber-600';
+                return `<div class="bg-white border border-gray-200 rounded-lg p-3 mb-2">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="font-semibold text-sm ${riskColor}">${escapeHtml(riskLabel)}</span>
+                        <span class="text-xs text-gray-500">${s.created_at ? formatPostTime(s.created_at) : ''}</span>
+                    </div>
+                    ${s.mood ? `<p class="text-sm text-gray-700">Mood: ${escapeHtml(s.mood)}</p>` : ''}
+                    ${s.strengths ? `<p class="text-xs text-gray-600">Strengths: ${s.strengths.map(st => escapeHtml(st)).join(', ')}</p>` : ''}
+                    ${s.weaknesses ? `<p class="text-xs text-gray-600">Weaknesses: ${s.weaknesses.map(w => escapeHtml(w)).join(', ')}</p>` : ''}
+                    ${s.suggestions ? `<p class="text-xs text-gray-500 mt-1">💡 ${s.suggestions.map(sg => escapeHtml(sg)).join(' | ')}</p>` : ''}
+                </div>`;
+            }).join('')
+            : '<p class="text-sm text-gray-500">No quiz summaries yet</p>';
+
         content.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Overall Risk Banner -->
+            <div class="mb-4 p-4 rounded-xl border-2 ${riskBadgeClass}">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold mb-1">Overall Risk Assessment</p>
+                        <p class="text-2xl font-bold">${overallRisk.level}</p>
+                    </div>
+                    <div class="text-4xl">${overallRisk.level === 'High' ? '🔴' : overallRisk.level === 'Medium' ? '🟡' : '🟢'}</div>
+                </div>
+                ${overallRisk.factors.length ? `<div class="mt-2 flex flex-wrap gap-1">${overallRisk.factors.map(f => `<span class="text-xs px-2 py-0.5 rounded-full bg-white bg-opacity-60">${riskFactorLabels[f] || f}</span>`).join('')}</div>` : ''}
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div class="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
                     <p class="text-xs text-indigo-700 font-semibold mb-1">Identity</p>
                     <p class="text-gray-800 font-bold">${escapeHtml(displayName)}</p>
@@ -1868,6 +1931,22 @@ async function viewVolunteerUserProfile(userId) {
                            <p class="text-sm text-gray-600">${escapeHtml(latestQuiz.recommendation || '')}</p>`
                 : '<p class="text-sm text-gray-600">No quiz data yet</p>'
             }
+                </div>
+            </div>
+
+            <!-- Chat Session History -->
+            <div class="mb-4">
+                <h4 class="text-lg font-bold text-gray-800 mb-2">💬 Chat Emotion History</h4>
+                <div class="bg-gray-50 rounded-xl p-3 border border-gray-200 max-h-48 overflow-y-auto">
+                    ${chatSessionsHtml}
+                </div>
+            </div>
+
+            <!-- AI Quiz Summaries -->
+            <div class="mb-4">
+                <h4 class="text-lg font-bold text-gray-800 mb-2">📊 Quiz AI Summaries</h4>
+                <div class="bg-gray-50 rounded-xl p-3 border border-gray-200 max-h-48 overflow-y-auto">
+                    ${aiSummariesHtml}
                 </div>
             </div>
         `;

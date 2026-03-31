@@ -205,6 +205,21 @@ Respond with ONLY the JSON object, nothing else.`;
       return { analyzed: true, saved: false, error: insertError.message };
     }
 
+    // 7. Save to chat_sessions for history tracking
+    try {
+      await supabase.from('chat_sessions').insert([{
+        session_id: sessionId,
+        user_id: userId,
+        transcript: transcript.slice(0, 5000),
+        dominant_emotion: classifierResult.dominant_emotion || 'neutral',
+        sentiment_score: classifierResult.sentiment_score || 0,
+        emotion_tags: classifierResult.emotions || [],
+        analyzed_at: new Date().toISOString()
+      }]);
+    } catch (csErr) {
+      console.warn('chat_sessions insert failed (non-fatal):', csErr.message);
+    }
+
     return {
       analyzed: true,
       saved: true,
@@ -718,8 +733,53 @@ app.post('/api/quiz/submit', async (req, res) => {
     recommendation
   };
 
-  if (!quiz_responses_db[user_id]) quiz_responses_db[user_id] = [];
-  quiz_responses_db[user_id].push(quiz_result);
+  try {
+    const { data: attempt, error: attemptError } = await supabase
+      .from('quiz_attempts')
+      .insert([{
+        user_id,
+        score: quiz_result.score,
+        average_score: quiz_result.average_score,
+        stress_level: quiz_result.stress_level,
+        recommendation: quiz_result.recommendation
+      }])
+      .select()
+      .single();
+
+    if (attemptError) {
+      console.error('quiz_attempts insert error:', attemptError.message);
+      return res.status(500).json({ success: false, error: 'Failed to save quiz attempt' });
+    }
+
+    if (Array.isArray(answers) && answers.length > 0) {
+      const answerRows = answers.map((answer, i) => {
+        const question = QUIZ_QUESTIONS[i] || {};
+        return {
+          attempt_id: attempt.id,
+          question_id: question.id || i + 1,
+          answer: String(answer),
+          weight: typeof answer === 'number' ? question.weight?.[answer] ?? null : null
+        };
+      });
+
+      const { error: answersError } = await supabase.from('quiz_answers').insert(answerRows);
+      if (answersError) console.error('quiz_answers insert error:', answersError.message);
+    }
+
+    const summaryText = `Stress level: ${stress_level}. ${recommendation}`;
+    const { error: summaryError } = await supabase.from('ai_summaries').insert([{
+      user_id,
+      quiz_attempt_id: attempt.id,
+      summary: summaryText,
+      risk_level: stress_level,
+      source: 'quiz_assessment'
+    }]);
+
+    if (summaryError) console.error('ai_summaries insert error:', summaryError.message);
+  } catch (err) {
+    console.error('quiz submit DB error:', err.message);
+    return res.status(500).json({ success: false, error: 'Database write failed' });
+  }
 
   return res.status(201).json({ success: true, result: quiz_result });
 });
@@ -731,8 +791,37 @@ app.get('/api/quiz/history/:user_id', async (req, res) => {
     return res.status(404).json({ error: 'User not found' });
   }
 
-  const history = quiz_responses_db[userId] || [];
-  return res.status(200).json({ history: history.slice(-5) });
+  let { data: history, error } = await supabase
+    .from('quiz_attempts')
+    .select('id, score, average_score, stress_level, recommendation, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(10);
+
+  if (error) {
+    console.warn('quiz_history query (full fields) error:', error.message);
+    const fallback = await supabase
+      .from('quiz_attempts')
+      .select('id, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (fallback.error) {
+      console.error('quiz_history fallback query error:', fallback.error.message);
+      return res.status(500).json({ error: fallback.error.message });
+    }
+    history = (fallback.data || []).map((r) => ({
+      id: r.id,
+      created_at: r.created_at,
+      score: null,
+      average_score: null,
+      stress_level: null,
+      recommendation: null
+    }));
+  }
+
+  return res.status(200).json({ history: history || [] });
 });
 
 // ==================== Nyxie Chat ====================
@@ -1000,30 +1089,40 @@ function parseStressLevel(avg) {
 async function getQuizRiskByUser() {
   const { data, error } = await supabase
     .from('quiz_answers')
-    .select('user_id, question_id, option_id, created_at');
+    .select('user_id, weight, created_at');
 
   if (error || !data) return {};
 
   const riskMap = {};
   for (const ans of data) {
+    if (!ans.user_id) continue;
+
     if (!riskMap[ans.user_id]) {
       riskMap[ans.user_id] = { total: 0, count: 0, last_quiz_date: ans.created_at };
     }
-    const question = QUIZ_QUESTIONS.find((q) => q.id === ans.question_id);
-    if (question) {
-      const score = question.weight[ans.option_id] || 0;
-      riskMap[ans.user_id].total += score;
-      riskMap[ans.user_id].count += 1;
-    }
+
+    const weight = Number(ans.weight || 0);
+    riskMap[ans.user_id].total += weight;
+    riskMap[ans.user_id].count += 1;
+
     if (new Date(ans.created_at) > new Date(riskMap[ans.user_id].last_quiz_date)) {
       riskMap[ans.user_id].last_quiz_date = ans.created_at;
     }
   }
 
   Object.keys(riskMap).forEach((uid) => {
-    const avg = riskMap[uid].count ? riskMap[uid].total / riskMap[uid].count : 0;
-    riskMap[uid].average_score = Math.round(avg * 100) / 100;
-    riskMap[uid].stress_level = parseStressLevel(avg);
+    const entry = riskMap[uid];
+    const avg = entry.count ? entry.total / entry.count : 0;
+    entry.score = Math.round(entry.total);
+    entry.average_score = Math.round(avg * 100) / 100;
+    entry.stress_level = parseStressLevel(avg);
+    entry.recommendation = entry.stress_level === 'Low'
+      ? 'Great! Keep maintaining your healthy habits.'
+      : entry.stress_level === 'Medium'
+        ? 'Consider taking more breaks and practicing mindfulness.'
+        : 'Please consider seeking professional help and taking rest.';
+    delete entry.total;
+    delete entry.count;
   });
 
   return riskMap;
@@ -1291,7 +1390,7 @@ app.get('/api/volunteer/user-profile/:volunteer_id/:user_id', async (req, res) =
 
   let moods = moods_db[userId] || [];
   const { data: dbMoods } = await supabase
-    .from('moods')
+    .from('mood_logs')
     .select('mood, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: true });
@@ -1308,6 +1407,35 @@ app.get('/api/volunteer/user-profile/:volunteer_id/:user_id', async (req, res) =
   moods.forEach((m) => {
     mood_counts[m.mood] = (mood_counts[m.mood] || 0) + 1;
   });
+
+  // Fetch chat session history for report
+  const { data: chatSessions } = await supabase
+    .from('chat_sessions')
+    .select('dominant_emotion, sentiment_score, emotion_tags, analyzed_at, transcript')
+    .eq('user_id', userId)
+    .order('analyzed_at', { ascending: false })
+    .limit(5);
+
+  // Fetch AI quiz summaries for report
+  const { data: aiSummaries } = await supabase
+    .from('ai_summaries')
+    .select('summary, risk_level, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(3);
+
+  // Compute overall risk assessment
+  const latestMood = moods.length ? moods[moods.length - 1].mood : 'neutral';
+  const latestQuizRisk = riskMap[userId] ? riskMap[userId].stress_level : null;
+  const latestSentiment = chatSessions && chatSessions.length ? chatSessions[0].sentiment_score : null;
+  let overallRisk = 'Low';
+  const riskFactors = [];
+  if (['sad', 'stressed', 'anxious'].includes(latestMood)) { riskFactors.push('negative_mood'); }
+  if (latestQuizRisk === 'High' || latestQuizRisk === 'Needs Support') { riskFactors.push('high_quiz_stress'); }
+  if (latestSentiment !== null && latestSentiment < -0.3) { riskFactors.push('negative_chat_sentiment'); }
+  if (hasOpenRequest) { riskFactors.push('open_support_request'); }
+  if (riskFactors.length >= 3) overallRisk = 'High';
+  else if (riskFactors.length >= 1) overallRisk = 'Medium';
 
   return res.status(200).json({
     user: {
@@ -1332,12 +1460,38 @@ app.get('/api/volunteer/user-profile/:volunteer_id/:user_id', async (req, res) =
     quiz: {
       latest: riskMap[userId]
         ? {
-          stress_level: riskMap[userId].stress_level,
+          score: riskMap[userId].score,
           average_score: riskMap[userId].average_score,
+          stress_level: riskMap[userId].stress_level,
+          recommendation: riskMap[userId].recommendation,
           timestamp: riskMap[userId].last_quiz_date
         }
         : null,
       recent_history: []
+    },
+    chat_sessions: (chatSessions || []).map(s => ({
+      dominant_emotion: s.dominant_emotion,
+      sentiment_score: s.sentiment_score,
+      emotion_tags: s.emotion_tags,
+      analyzed_at: s.analyzed_at,
+      transcript_preview: (s.transcript || '').slice(0, 200)
+    })),
+    ai_summaries: (aiSummaries || []).map(s => {
+      let parsed = {};
+      try { parsed = JSON.parse(s.summary); } catch (_) { parsed = { raw: s.summary }; }
+      return {
+        risk_level: s.risk_level,
+        created_at: s.created_at,
+        mood: parsed.mood,
+        category: parsed.category,
+        strengths: parsed.strengths,
+        weaknesses: parsed.weaknesses,
+        suggestions: parsed.suggestions
+      };
+    }),
+    overall_risk: {
+      level: overallRisk,
+      factors: riskFactors
     },
     assignment: {
       is_assigned_to_current_volunteer: isAssigned,
@@ -1538,7 +1692,7 @@ app.get('/api/questions', (req, res) => {
 });
 
 app.post('/api/submit', async (req, res) => {
-  const { answers } = req.body;
+  const { answers, user_id } = req.body;
   if (!answers || !Array.isArray(answers)) {
     return res.status(400).json({ error: 'Invalid answers format.' });
   }
@@ -1560,6 +1714,35 @@ app.post('/api/submit', async (req, res) => {
   });
 
   const percentage = Math.round((totalScore / Math.max(maxPossibleScore, 1)) * 100);
+
+  // --- Persist quiz attempt and answers to DB ---
+  let attemptId = null;
+  if (user_id) {
+    try {
+      // 1. Create quiz_attempt
+      const { data: attempt, error: attemptError } = await supabase
+        .from('quiz_attempts')
+        .insert([{ user_id }])
+        .select('id')
+        .single();
+
+      if (!attemptError && attempt) {
+        attemptId = attempt.id;
+
+        // 2. Insert quiz_answers
+        const answerRows = answers.map((ans) => ({
+          attempt_id: attemptId,
+          question_id: ans.questionId,
+          answer: String(ans.optionId)
+        }));
+        await supabase.from('quiz_answers').insert(answerRows);
+      }
+    } catch (dbErr) {
+      console.warn('Quiz DB persist failed (non-fatal):', dbErr.message);
+    }
+  }
+
+  // --- AI Analysis ---
   const prompt = `
 A user took an emotional assessment quiz. Their total emotional well-being score is ${percentage}% (out of 100).
 Here are their answers:
@@ -1578,6 +1761,7 @@ Analyze their responses and provide a JSON response with the following keys EXAC
 DO NOT output markdown formatting blocks. Output ONLY raw JSON text.
   `;
 
+  let feedback;
   try {
     const mistralKey = process.env.MISTRAL_API_KEY;
     if (!mistralKey) throw new Error('MISTRAL_API_KEY is not defined.');
@@ -1589,28 +1773,39 @@ DO NOT output markdown formatting blocks. Output ONLY raw JSON text.
     );
 
     const aiText = response.data.choices[0].message.content.trim();
-    const aiResult = JSON.parse(aiText.replace(/```json/g, '').replace(/```/g, '').trim());
-    return res.json({ score: percentage, feedback: aiResult });
+    feedback = JSON.parse(aiText.replace(/```json/g, '').replace(/```/g, '').trim());
   } catch (error) {
     let category = percentage >= 75 ? 'Good' : percentage <= 40 ? 'Needs Support' : 'Moderate';
     let fallbackMood = percentage >= 75 ? 'Positive/Calm' : percentage <= 40 ? 'Stressed/Anxious' : 'Neutral';
-    return res.json({
-      score: percentage,
-      feedback: {
-        personalityType: 'Unknown (AI Offline)',
-        strengths: ['Self-awareness'],
-        weaknesses: ['Unable to analyze further currently'],
-        emotionalScore: percentage,
-        category,
-        mood: fallbackMood,
-        suggestions: [
-          'Take a moment to breathe and reflect.',
-          'Drink some water and rest your mind.',
-          'If you feel overwhelmed, consider talking to someone close to you.'
-        ]
-      }
-    });
+    feedback = {
+      personalityType: 'Unknown (AI Offline)',
+      strengths: ['Self-awareness'],
+      weaknesses: ['Unable to analyze further currently'],
+      emotionalScore: percentage,
+      category,
+      mood: fallbackMood,
+      suggestions: [
+        'Take a moment to breathe and reflect.',
+        'Drink some water and rest your mind.',
+        'If you feel overwhelmed, consider talking to someone close to you.'
+      ]
+    };
   }
+
+  // --- Save AI summary to ai_summaries ---
+  if (user_id && feedback) {
+    try {
+      await supabase.from('ai_summaries').insert([{
+        user_id,
+        summary: JSON.stringify(feedback),
+        risk_level: feedback.category || 'Moderate'
+      }]);
+    } catch (summaryErr) {
+      console.warn('ai_summaries insert failed (non-fatal):', summaryErr.message);
+    }
+  }
+
+  return res.json({ score: percentage, feedback, attempt_id: attemptId });
 });
 
 // ==================== Health ====================
