@@ -901,8 +901,32 @@ async function loadUserDashboard() {
                 moodCard.style.backgroundColor = moodData.current_mood.color;
                 moodEmoji.textContent = moodData.current_mood.emoji;
                 moodStatus.textContent = moodData.current_mood.mood.charAt(0).toUpperCase() + moodData.current_mood.mood.slice(1);
-                loadMusicRecommendation(moodData.current_mood.mood);
             }
+
+            // Always load music from the best mood signal available.
+            let moodForMusic = moodData.current_mood && moodData.current_mood.mood
+                ? moodData.current_mood.mood
+                : null;
+
+            if (!moodForMusic && Array.isArray(moodData.mood_history) && moodData.mood_history.length > 0) {
+                const latestMood = moodData.mood_history[moodData.mood_history.length - 1];
+                moodForMusic = latestMood && latestMood.mood ? latestMood.mood : null;
+            }
+
+            if (!moodForMusic) {
+                try {
+                    const localMoodRaw = localStorage.getItem(`mood:${currentUser.user_id}`);
+                    if (localMoodRaw) {
+                        const localMood = JSON.parse(localMoodRaw);
+                        moodForMusic = localMood && localMood.mood ? localMood.mood : null;
+                    }
+                } catch (_) {
+                    // Ignore local fallback parse errors.
+                }
+            }
+
+            loadMusicRecommendation(moodForMusic || 'calm');
+
             if (moodCount) moodCount.textContent = moodData.total_moods;
             setTimeout(() => loadMoodTrendChart(moodData.mood_history), 100);
         }
@@ -913,12 +937,29 @@ async function loadUserDashboard() {
 let currentMusicQueue = [];
 let currentPlayingIndex = 0;
 
+function normalizeMoodForMusic(rawMood) {
+    const mood = String(rawMood || '').toLowerCase().trim();
+    if (!mood) return 'calm';
+
+    if (['happy', 'sad', 'anxious', 'stressed', 'calm'].includes(mood)) return mood;
+    if (['neutral', 'okay', 'fine'].includes(mood)) return 'calm';
+    if (['stress', 'overwhelmed', 'burnout', 'tense', 'angry', 'exhausted', 'tired'].includes(mood)) return 'stressed';
+    if (['low', 'down', 'depressed', 'upset'].includes(mood)) return 'sad';
+
+    return 'calm';
+}
+
 async function loadMusicRecommendation(mood) {
     try {
-        const response = await fetch(`${API_BASE}/music-recommendation/${mood}`);
+        const normalizedMood = normalizeMoodForMusic(mood);
+        const response = await fetch(`${API_BASE}/music-recommendation/${normalizedMood}`);
         const data = await response.json();
         if (response.ok && Array.isArray(data)) {
             document.getElementById('musicSection').classList.remove('hidden');
+            const musicText = document.getElementById('musicText');
+            if (musicText) {
+                musicText.textContent = `Curated playlist based on your ${normalizedMood} mood`;
+            }
             currentMusicQueue = data;
             currentPlayingIndex = 0;
             renderMusicPlaylist();
