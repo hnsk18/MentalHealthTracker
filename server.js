@@ -269,7 +269,7 @@ const MOOD_RESPONSES = {
     message: 'Great to see you feeling good! Keep it up 💙',
     actions: [
       { label: '📓 Write Journal', route: 'journal' },
-      { label: '📊 View Dashboard', route: 'dashboard' }
+      { label: '📊 View Dashboard', route: 'profile' }
     ]
   },
   sad: {
@@ -298,7 +298,7 @@ const MOOD_RESPONSES = {
     message: "You're in a good place. Keep maintaining your balance 🌿",
     actions: [
       { label: '📓 Write Journal', route: 'journal' },
-      { label: '📊 View Progress', route: 'dashboard' }
+      { label: '📊 View Progress', route: 'profile' }
     ]
   }
 };
@@ -712,7 +712,7 @@ app.post('/api/mood', async (req, res) => {
 
   const moodResponse = MOOD_RESPONSES[mood] || {
     message: 'Thank you for sharing how you feel \ud83d\udc99',
-    actions: [{ label: '\ud83d\udcca View Dashboard', route: 'dashboard' }]
+    actions: [{ label: '\ud83d\udcca View Dashboard', route: 'profile' }]
   };
 
   return res.status(201).json({ success: true, mood_entry, response: moodResponse });

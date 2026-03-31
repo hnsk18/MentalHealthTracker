@@ -3180,11 +3180,12 @@ navigateTo = function (page) {
 
 async function testApiConnection() {
     try {
-        const response = await fetch('/api/test');
-        const text = await response.text();
+        const response = await fetch('/api/health');
 
         if (response.ok) {
-            showToast(`API Connected: ${text}`, 'success');
+            const data = await response.json();
+            const message = data?.message || data?.status || 'Backend reachable';
+            showToast(`API Connected: ${message}`, 'success');
         } else {
             showToast(`API Error (${response.status})`, 'error');
         }
