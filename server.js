@@ -265,21 +265,31 @@ const getAnonymousName = (userId) => {
 };
 
 const getFeedIdentity = (profile = {}, fallbackUserId = null) => {
-  const role = profile.role === 'volunteer' ? 'volunteer' : 'user';
-  if (role === 'volunteer') {
-    const volunteerName = `${profile.name || profile.dummy_name || 'Volunteer'}`.trim();
+  try {
+    const role = (profile && profile.role === 'volunteer') ? 'volunteer' : 'user';
+    if (role === 'volunteer') {
+      // For volunteers, use their dummy_name (which contains their real name from registration)
+      const volunteerName = `${(profile && profile.dummy_name) || 'Volunteer'}`.trim();
+      return {
+        role,
+        displayName: volunteerName || 'Volunteer',
+        visibility: 'identified'
+      };
+    }
+
     return {
       role,
-      displayName: volunteerName || 'Volunteer',
-      visibility: 'identified'
+      displayName: getAnonymousName((profile && profile.id) || fallbackUserId),
+      visibility: 'anonymous'
+    };
+  } catch (e) {
+    console.error('Error in getFeedIdentity:', e, 'profile:', profile);
+    return {
+      role: 'user',
+      displayName: getAnonymousName(fallbackUserId),
+      visibility: 'anonymous'
     };
   }
-
-  return {
-    role,
-    displayName: getAnonymousName(profile.id || fallbackUserId),
-    visibility: 'anonymous'
-  };
 };
 
 const MOOD_RESPONSES = {
@@ -545,6 +555,7 @@ app.get('/api/feed/posts', async (req, res) => {
       .limit(100);
 
     if (postsError) {
+      console.error('Posts query error:', postsError);
       return res.status(500).json({ error: postsError.message });
     }
 
@@ -555,10 +566,14 @@ app.get('/api/feed/posts', async (req, res) => {
     if (userIds.length) {
       const { data: users, error: usersError } = await supabase
         .from('users')
-        .select('id, name, dummy_name, role')
+        .select('id, dummy_name, role')
         .in('id', userIds);
 
-      if (usersError) return res.status(500).json({ error: usersError.message });
+      if (usersError) {
+        console.error('Users query error:', usersError);
+        return res.status(500).json({ error: usersError.message });
+      }
+      
       usersById = (users || []).reduce((acc, u) => {
         acc[u.id] = getFeedIdentity(u, u.id);
         return acc;
@@ -573,16 +588,22 @@ app.get('/api/feed/posts', async (req, res) => {
         .in('post_id', postIds)
         .order('created_at', { ascending: true });
 
-      if (commentsError) return res.status(500).json({ error: commentsError.message });
+      if (commentsError) {
+        console.error('Comments query error:', commentsError);
+        return res.status(500).json({ error: commentsError.message });
+      }
 
       const commentUserIds = [...new Set((comments || []).map((c) => c.user_id))];
       let commentUsersById = {};
       if (commentUserIds.length) {
         const { data: commentUsers, error: commentUsersError } = await supabase
           .from('users')
-          .select('id, name, dummy_name, role')
+          .select('id, dummy_name, role')
           .in('id', commentUserIds);
-        if (commentUsersError) return res.status(500).json({ error: commentUsersError.message });
+        if (commentUsersError) {
+          console.error('Comment users query error:', commentUsersError);
+          return res.status(500).json({ error: commentUsersError.message });
+        }
         commentUsersById = (commentUsers || []).reduce((acc, u) => {
           acc[u.id] = getFeedIdentity(u, u.id);
           return acc;
@@ -605,27 +626,26 @@ app.get('/api/feed/posts', async (req, res) => {
       });
     }
 
-    const payload = (posts || []).map((p) => ({
-      ...(function () {
-        const author = usersById[p.user_id] || getFeedIdentity({}, p.user_id);
-        return {
-          role: author.role,
-          visibility: author.visibility,
-          displayName: author.displayName,
-          petName: author.displayName
-        };
-      })(),
-      id: p.id,
-      userId: p.user_id,
-      text: p.caption || '',
-      image_url: p.image_url || null,
-      timestamp: p.created_at,
-      comments: commentsByPost[p.id] || []
-    }));
+    const payload = (posts || []).map((p) => {
+      const author = usersById[p.user_id] || getFeedIdentity({}, p.user_id);
+      return {
+        role: author.role,
+        visibility: author.visibility,
+        displayName: author.displayName,
+        petName: author.displayName,
+        id: p.id,
+        userId: p.user_id,
+        text: p.caption || '',
+        image_url: p.image_url || null,
+        timestamp: p.created_at,
+        comments: commentsByPost[p.id] || []
+      };
+    });
 
     return res.status(200).json({ posts: payload });
   } catch (err) {
-    return res.status(500).json({ error: 'Server error' });
+    console.error('Feed posts error:', err);
+    return res.status(500).json({ error: err.message || 'Server error' });
   }
 });
 
